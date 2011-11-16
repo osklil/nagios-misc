@@ -1,0 +1,701 @@
+#!/usr/bin/perl -w
+#
+# check_snmp_if - Check status of interfaces using SNMP IF-MIB
+# Copyright (C) 2011 Oskar Liljeblad
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+# Run check_snmp_if --help for usage information.
+# Written by Oskar Liljeblad <oskar@osk.mine.nu>.
+#
+
+require 5.10.0;
+use strict;
+use Socket;
+use Storable qw(nstore retrieve store_fd fd_retrieve);
+use Net::SNMP;
+use Getopt::Long;
+use List::Util qw(min max);
+use File::Spec;
+use Nagios::Plugin;
+use Nagios::Plugin::Threshold;
+
+my $PROGRAM = 'check_snmp_if';
+my $VERSION = '0.1';
+
+my $support64bit = ~0 != 4294967295;
+my $plugin = Nagios::Plugin->new(shortname => 'check_snmp_if');
+my %opt = (
+  'community' => 'public',
+  'processes' => 1,
+  'snmp-version' => 2,
+  'stats-dir' => "/var/cache/$PROGRAM",
+  'utilization-thresholds' => '90,95',	# common Nagios thresholds
+  'broadcast-thresholds' => '250,500',	# example thresholds from the Internet
+  'multicast-thresholds' => '-',
+  'unicast-thresholds' => '-',
+  'non-unicast-thresholds' => '-',
+  'error-thresholds' => '125,250',	# thresholds unsure
+  'discard-thresholds' => '125,250',	# thresholds unsure
+  'unknown-thresholds' => '125,250',	# thresholds unsure
+  'label' => 'name',
+  'type-filter' => '6',
+  'timeout' => 10,
+  'verbose' => 0,
+);
+Getopt::Long::config('bundling');
+Getopt::Long::GetOptions(\%opt,
+  'host|H=s',
+  'timeout|t=i',
+  'community|C=s',
+  'snmp-version|V=s',
+  'processes|p=i',
+  'stats-dir=s',
+  'stats-file=s',
+  'label=s',
+  'filter|F=s',
+  'type-filter|T=s',
+  'status-filter|S=s',
+  'promiscuous-filter=s',
+  'utilization-thresholds|U=s',
+  'utilization-filter=s',
+  'broadcast-thresholds|B=s',
+  'broadcast-filter=s',
+  'multicast-thresholds|M=s',
+  'multicast-filter=s',
+  'unicast-thresholds=s',
+  'unicast-filter=s',
+  'non-unicast-thresholds=s',
+  'non-unicast-filter=s',
+  'error-thresholds|E=s',
+  'error-filter=s',
+  'discard-thresholds|D=s',
+  'discard-filter=s',
+  'unknown-thresholds=s',
+  'unknown-filter=s',
+  'no-perfdata|n',
+  'verbose|v+',
+  'help',
+  'version'
+) || exit 1;
+
+if (defined $opt{'help'}) {
+  print "Usage: $0 -H ADDRESS [OPTION]...\n";
+  print "Check interfaces, including statistics, via SNMP (IF-MIB).\n";
+  print "\nGeneral options:\n";
+  print "  -H, --host=ADDRESS       address or name of host to check\n";
+  print "  -t, --timeout=SECONDS    total time for SNMP checks\n";
+  print "  -C, --community=NAME     SNMP community\n";
+  print "  -V, --snmp-version=VER   SNMP version (1, 2c, 3)\n";
+  print "  -p, --processes=COUNT    number of parallel check processes\n";
+  print "      --stats-dir=DIR      directory for cached statistics\n";
+  print "      --stats-file=FILE    file for cached statistics\n";
+  print "      --label=FORMAT       format of interface labels (see below)\n";
+  print "  -n, --no-perfdata        do not print any performance data\n";
+  print "  -v, --verbose            explain what is being done (incremental)\n";
+  print "      --help               display this help and exit\n";
+  print "      --version            output version information and exit\n";
+  print "\nThreshold options:\n";
+  # FIXME help: more about thresholds (THLD)
+  print "  -U, --utilization-thresholds=THLD  bandwidth utilization (in percent)\n";
+  print "  -B, --broadcast-thresholds=THLD    broadcast packet rates\n";
+  print "  -M, --multicast-thresholds=THLD    multicast packet rates\n";
+  print "      --unicast-thresholds=THLD      unicast packet rates\n";
+  print "      --non-unicast-thresholds=THLD  non-unicast packet rates\n";
+  print "  -E, --error-thresholds=THLD        error packet rates\n";
+  print "  -D, --discard-thresholds=THLD      discarded packet rates\n";
+  print "      --unknown-thresholds=THLD      unknown protocol packet input rate\n";
+  print "\nFilter options:\n";
+  # FIXME help: more about filters (FILTER)
+  print "  -F, --filter=FILTER                all checks\n";
+  print "  -S, --status-filter=FILTER         operational status checks\n";
+  print "      --promiscuous-filter=FILTER    promiscuous mode\n";
+  print "      --utilization-filter=FILTER    bandwidth utilization\n";
+  print "      --broadcast-filter=FILTER      broadcast packet rates\n";
+  print "      --multicast-filter=FILTER      multicast packet rates\n";
+  print "      --unicast-filter=FILTER        unicast packet rates\n";
+  print "      --non-unicast-filter=FILTER    non-unicast packet rates\n";
+  print "      --error-filter=FILTER          error packet rates\n";
+  print "      --discard-filter=FILTER        discarded packet rates\n";
+  print "      --unknown-filter=FILTER        unknown protocol packet input rate\n";
+  print "\nReport $PROGRAM bugs to <oskar\@osk.mine.nu>.\n";
+  exit;
+}
+if (defined $opt{'version'}) {
+  print "$PROGRAM $VERSION\n";
+  print "Copyright (C) 2011 Oskar Liljeblad\n";
+  print "License AGPLv3+: GNU Affero GPL version 3 or later <http://gnu.org/licenses/agpl.html>.\n";
+  print "This is free software: you are free to change and redistribute it.\n";
+  print "There is NO WARRANTY, to the extent permitted by law.\n";
+  print "\nWritten by Oskar Liljeblad.\n";
+  exit;
+}
+
+$plugin->nagios_die("snmp version 1 is not supported\n") if $opt{'snmp-version'} eq '1' || $opt{'snmp-version'} eq 'snmpv1';
+$plugin->nagios_die("missing --host/-H parameter\n") if !defined $opt{'host'};
+if (exists $opt{'stats-file'}) {
+  if (substr($opt{'stats-file'}, 0, 1) ne '/' && $opt{'stats-file'} !~ /\//) {
+    $opt{'stats-file'} = File::Spec->catfile($opt{'stats-dir'}, $opt{'stats-file'});
+  }
+} else {
+  $opt{'stats-file'} = File::Spec->catfile($opt{'stats-dir'}, $opt{'host'}.'.stats');
+}
+
+my ($in_util_thresh, $out_util_thresh) = parse_in_out_thresholds_specification($opt{'utilization-thresholds'});
+my ($in_bcast_thresh, $out_bcast_thresh) = parse_in_out_thresholds_specification($opt{'broadcast-thresholds'});
+my ($in_mcast_thresh, $out_mcast_thresh) = parse_in_out_thresholds_specification($opt{'multicast-thresholds'});
+my ($in_ucast_thresh, $out_ucast_thresh) = parse_in_out_thresholds_specification($opt{'unicast-thresholds'});
+my ($in_nucast_thresh, $out_nucast_thresh) = parse_in_out_thresholds_specification($opt{'non-unicast-thresholds'});
+my ($in_error_thresh, $out_error_thresh) = parse_in_out_thresholds_specification($opt{'error-thresholds'});
+my ($in_discard_thresh, $out_discard_thresh) = parse_in_out_thresholds_specification($opt{'discard-thresholds'});
+my $in_unknown_thresh = parse_thresholds_specification($opt{'unknown-thresholds'});
+$plugin->nagios_die("surplus operand\n") if @ARGV;
+
+my $retries = 1; # default number of SNMP retries
+my ($session, $error) = Net::SNMP->session(
+    -hostname => $opt{'host'},
+    -community => $opt{'community'},
+    -version => $opt{'snmp-version'},
+    -timeout => int($opt{'timeout'}/($retries+1)));
+$plugin->nagios_die("cannot open SNMP session: $error\n") if !defined $session;
+
+my $result = $session->get_table(-baseoid => '1.3.6.1.2.1.2.2.1.1');
+$plugin->nagios_die("cannot get description table (IF-MIB::ifType): ".$session->error."\n") if !defined $result;
+
+my @indexes;
+foreach my $oid (keys %{$result}) {
+  my ($index) = ($oid =~ /\.(\d+)$/);
+  push @indexes, $index;
+}
+
+my $report = { 'status' => OK };
+my $oldstats;
+my $availablecount = scalar keys %{$result};
+my $checkcount = 0;
+my $nostatscount = 0;
+if (@indexes) {
+  my %newstats;
+  my $processes = min($opt{'processes'}, scalar @indexes);
+  my $status = 0;
+  if ($processes == 1) {
+    foreach my $index (@indexes) {
+      my $stats = get_interface_stats($session, $index);
+      $newstats{$stats->{'idx'}} = $stats;
+    }
+    $session->close();
+  } else {
+    $session->close();
+    my %sockets;
+    foreach (1..$processes) {
+      socketpair(my $socket, my $socket2, AF_UNIX, SOCK_STREAM, PF_UNSPEC) // $plugin->nagios_die("cannot create sockets: $!\n");
+      my $pid = fork() // $plugin->nagios_die("cannot create process: $!\n");
+      if ($pid == 0) {
+        select $socket; $| = 1; select STDOUT;
+        close $socket2;
+        my ($session, $error) = Net::SNMP->session(-hostname => $opt{'host'}, -community => $opt{'community'}, -version => $opt{'snmp-version'});
+        $plugin->nagios_die("cannot open SNMP session: $error\n") if !defined $session;
+        for (;;) {
+          read($socket, my $data, 4) // $plugin->nagios_die("cannot receive from parent: $!\n");
+          my ($index) = unpack('l', $data);
+          last if $index < 0;
+          my $stats = get_interface_stats($session, $index);
+          store_fd($stats, $socket) // $plugin->nagios_die("cannot send to parent: $!\n");
+        }
+        $session->close();
+        exit;
+      }
+      select $socket2; $| = 1; select STDOUT;
+      close $socket;
+      $sockets{$_} = $socket2;
+      print $socket2 pack('l', shift @indexes) // $plugin->nagios_die("cannot write to process: $!\n");
+    }
+    while (keys %sockets) {
+      my ($readin, $readout) = ('');
+      vec($readin, fileno($_), 1) = 1 foreach values %sockets;
+      select($readout = $readin, undef, undef, undef) >= 0 || $plugin->nagios_die("cannot monitor sockets: $!\n");
+      foreach my $child (keys %sockets) {
+        my $socket = $sockets{$child};
+        if (vec($readout, fileno($socket), 1)) {
+          my $stats = fd_retrieve($socket) // $plugin->nagios_die("cannot receive from process: $!\n");
+          $newstats{$stats->{'idx'}} = $stats;
+          my $nextindex = @indexes ? shift @indexes : -1;
+          print $socket pack('l', $nextindex) // $plugin->nagios_die("cannot send to process: $!\n");
+          if ($nextindex <= 0) {
+            close $socket;
+            delete $sockets{$child};
+          }
+        }
+      }
+    }
+    wait foreach 1..$processes;
+  }
+
+  if (-f $opt{'stats-file'}) {
+    $oldstats = retrieve($opt{'stats-file'}) // $plugin->nagios_die("cannot read statistics file $opt{'stats-file'}: $!\n");
+  }
+  foreach my $index (sort { $a <=> $b } keys %newstats) {
+    my $s = $newstats{$index};
+    next if !filter_interface($opt{'filter'}, $s);
+    next if !filter_interface($opt{'type-filter'}, $s, 'type');
+    my $label = get_interface_label($opt{'label'}, $s) // $index;
+    $checkcount++;
+
+    my $os = defined $oldstats ? $oldstats->{$index} : undef;
+    my $elapsed = defined $os ? $s->{'tm'} - $os->{'tm'} : 0;
+    my $interface_report = { 'status' => OK };
+
+    my ($status, $status_result) = get_interface_status($s);
+    add_report($interface_report, $status, $status_result, filter_interface($opt{'status-filter'}, $s));
+
+    my $promisc = $s->{'x16'} // 0;
+    add_report($interface_report, 'promisc', WARNING, filter_interface($opt{'promiscuous-filter'}, $s)) if $promisc eq '1';
+
+    if ($elapsed == 0) {
+      $nostatscount++;
+    } else {
+      my $filter = filter_interface($opt{'utilization-filter'}, $s);
+      my $bytesps = get_interface_speed($index, $s);
+      # Cisco StackPorts may report 0 ifSpeed and ifHighSpeed
+      if (defined $bytesps && $bytesps != 0) {
+        my $inbytes = get_interface_counter_difference($label, $s, $os, 'input octet', '10', 'x6');
+        if (defined $inbytes) {
+          my $inutil = int($inbytes / $elapsed / $bytesps * 100);
+          my $inprct = min(100, int(($inbytes/$elapsed*100 + $bytesps - 1)/$bytesps));
+          add_report($interface_report, format_integer('inData=%hBB/s(%p%%)', int($inbytes/$elapsed), $bytesps), try_threshold($in_util_thresh, $inutil), $filter);
+          add_perfdata("$label inData%", $inprct, 100, '%', $in_util_thresh);
+        }
+        my $outbytes = get_interface_counter_difference($label, $s, $os, 'output octet', '16', 'x10');
+        if (defined $outbytes) {
+          my $oututil = int($outbytes / $elapsed / $bytesps * 100);
+          my $outprct = min(100, int(($outbytes/$elapsed*100 + $bytesps - 1)/$bytesps));
+          add_report($interface_report, format_integer('outData=%hBB/s(%p%%)', int($outbytes/$elapsed), $bytesps), try_threshold($out_util_thresh, $oututil), $filter);
+          add_perfdata("$label outData%", $outprct, 100, '%', $out_util_thresh);
+        }
+      }
+
+      $filter = filter_interface($opt{'broadcast-filter'}, $s);
+      my $inbcastpkts = get_interface_counter_difference($label, $s, $os, 'input broadcast packet', 'x3', 'x9');
+      if (defined $inbcastpkts) {
+        my $v = int($inbcastpkts/$elapsed);
+        add_report($interface_report, format_integer('inBcast=%hPpps', $v), try_threshold($in_bcast_thresh, $v), $filter);
+      }
+      my $outbcastpkts = get_interface_counter_difference($label, $s, $os, 'output broadcast packet', 'x5', 'x13');
+      if (defined $outbcastpkts) {
+        my $v = int($outbcastpkts/$elapsed);
+        add_report($interface_report, format_integer('outBcast=%hPpps', $v), try_threshold($out_bcast_thresh, $v), $filter);
+      }
+
+      $filter = filter_interface($opt{'multicast-filter'}, $s);
+      my $inmcastpkts = get_interface_counter_difference($label, $s, $os, 'input multicast packet', 'x2', 'x8');
+      if (defined $inmcastpkts) {
+        my $v = int($inmcastpkts/$elapsed);
+        add_report($interface_report, format_integer('inMcast=%hPpps', $v), try_threshold($in_mcast_thresh, $v), $filter);
+      }
+      my $outmcastpkts = get_interface_counter_difference($label, $s, $os, 'output multicast packet', 'x4', 'x12');
+      if (defined $outmcastpkts) {
+        my $v = int($outmcastpkts/$elapsed);
+        add_report($interface_report, format_integer('outMcast=%hPpps', $v), try_threshold($out_mcast_thresh, $v), $filter);
+      }
+
+      $filter = filter_interface($opt{'unicast-filter'}, $s);
+      my $inucastpkts = get_interface_counter_difference($label, $s, $os, 'input unicast packet', '11', 'x7');
+      if (defined $inucastpkts) {
+        my $v = int($inucastpkts/$elapsed);
+        add_report($interface_report, format_integer('inUcast=%hPpps', $v), try_threshold($in_ucast_thresh, $v), $filter);
+      }
+      my $outucastpkts = get_interface_counter_difference($label, $s, $os, 'output unicast packet', '17', 'x11');
+      if (defined $outucastpkts) {
+        my $v = int($outucastpkts/$elapsed);
+        add_report($interface_report, format_integer('outUcast=%hPpps', $v), try_threshold($out_ucast_thresh, $v), $filter);
+      }
+
+      $filter = filter_interface($opt{'non-unicast-filter'}, $s);
+      my $innucastpkts = get_interface_counter_difference($label, $s, $os, 'input non-unicast packet', '12');
+      if (defined $innucastpkts) {
+        my $v = int($innucastpkts/$elapsed);
+        add_report($interface_report, format_integer('inNUcast=%hPpps', $v), try_threshold($in_nucast_thresh, $v), $filter);
+      }
+      my $outnucastpkts = get_interface_counter_difference($label, $s, $os, 'output non-unicast packet', '18');
+      if (defined $outnucastpkts) {
+        my $v = int($outnucastpkts/$elapsed);
+        add_report($interface_report, format_integer('outNUcast=%hPpps', $v), try_threshold($out_nucast_thresh, $v), $filter);
+      }
+
+      $filter = filter_interface($opt{'error-filter'}, $s);
+      my $inerrorpkts = get_interface_counter_difference($label, $s, $os, 'input error packet', '14');
+      if (defined $inerrorpkts) {
+        my $v = int($inerrorpkts/$elapsed);
+        add_report($interface_report, format_integer('inErrors=%hPpps', $v), try_threshold($in_error_thresh, $v), $filter);
+      }
+      my $outerrorpkts = get_interface_counter_difference($label, $s, $os, 'output error packet', '20');
+      if (defined $outerrorpkts) {
+        my $v = int($outerrorpkts/$elapsed);
+        add_report($interface_report, format_integer('outErrors=%hPpps', $v), try_threshold($out_error_thresh, $v), $filter);
+      }
+
+      $filter = filter_interface($opt{'discard-filter'}, $s);
+      my $indiscardpkts = get_interface_counter_difference($label, $s, $os, 'input discard packet', '13');
+      if (defined $indiscardpkts) {
+        my $v = int($indiscardpkts/$elapsed);
+        add_report($interface_report, format_integer('inDiscards=%hPpps', $v), try_threshold($in_discard_thresh, $v), $filter);
+      }
+      my $outdiscardpkts = get_interface_counter_difference($label, $s, $os, 'output discard packet', '19');
+      if (defined $outdiscardpkts) {
+        my $v = int($outdiscardpkts/$elapsed);
+        add_report($interface_report, format_integer('outDiscards=%hPpps', $v), try_threshold($out_discard_thresh, $v), $filter);
+      }
+
+      $filter = filter_interface($opt{'unknown-filter'}, $s);
+      my $inunknownpkts = get_interface_counter_difference($label, $s, $os, 'input unknown protocol packet', '15');
+      if (defined $inunknownpkts) {
+        my $v = int($inunknownpkts/$elapsed);
+        add_report($interface_report, format_integer('inUnknowns=%hPpps', $v), try_threshold($in_unknown_thresh, $v), $filter);
+      }
+    }
+
+    # FIXME verbosity
+    if ($opt{'verbose'} >= 2) {
+      print $label, ': ', join(' ', @{$interface_report->{'reports'}}), "\n";
+    } elsif ($opt{'verbose'} >= 1) {
+      
+    }
+    delete $interface_report->{'normals'};
+    merge_report($report, $interface_report, $label);
+  }
+  nstore(\%newstats, $opt{'stats-file'});
+}
+if ($report->{'status'} == OK) {
+  # FIXME verbosity: always report this?
+  my $msg = $availablecount.' '.($availablecount == 1 ? 'interface' : 'interfaces').' available, '.$checkcount.' checked';
+  $msg .= ', '.$nostatscount.' without statistics' if $nostatscount != 0;
+  $report->{'normals'} = [ $msg ];
+}
+$plugin->nagios_exit($report->{'status'}, format_report($report));
+
+sub get_interface_stats {
+  my ($session, $index) = @_;
+  my @request;
+  push @request, "1.3.6.1.2.1.2.2.1.$_.$index" for (2, 3, 5, 7, 8, 10..20);
+  push @request, "1.3.6.1.2.1.31.1.1.1.$_.$index" for (1..13, 15, 16, 18, 19);
+  my $result = $session->get_request(-varbindlist => \@request);
+  $plugin->nagios_die("cannot get additional SNMP values: ".$session->error."\n") if !defined $result;
+  my $stats = { 'idx' => $index, 'tm' => time };
+  foreach my $oid (@request) {
+    my $key = $oid;
+    $key =~ s/^1\.3\.6\.1\.2\.1\.2\.2\.1\.(\d+).*$/$1/;
+    $key =~ s/^1\.3\.6\.1\.2\.1\.31\.1\.1\.1\.(\d+).*$/x$1/;
+    $stats->{$key} = $result->{$oid};
+  }
+  return $stats;
+}
+
+sub get_interface_counter_difference {
+  my ($label, $s, $os, $description, $key, $xkey) = @_;
+  my $count;
+  if (defined $s->{'x19'} && (!defined $os->{'x19'} || $s->{'x19'} ne $os->{'x19'})) {
+    warn "counters have been reset for $label\n"; # FIXME verbosity: error message
+  } elsif ($support64bit && defined $xkey && defined $s->{$xkey} && $s->{$xkey} =~ /^\d+$/ && defined $os->{$xkey} && $os->{$xkey} =~ /^\d+$/) {
+    $count = $s->{$xkey} - $os->{$xkey};
+    $count = ~0 + $count if $count < 0; # It is extremely unlikely a 64 bit octet counter will wrap in 30 mins. It would require fully utilized 81 zettabyte link.
+  } elsif (defined $s->{$key} && $s->{$key} =~ /^\d+$/ && defined $os->{$key} && $os->{$key} =~ /^\d+$/) {
+    $count = $s->{$key} - $os->{$key};
+    $count = 2**32 + $count if $count < 0;
+  } elsif ($support64bit && defined $xkey && defined $s->{$xkey}) {
+    warn "unparsable 64-bit $description counter for $label: ", $s->{$xkey}, "\n" if $s->{$xkey} ne 'noSuchInstance';
+  } elsif (defined $s->{$key}) {
+    warn "unparsable $description counter for $label: ", $s->{$key}, "\n" if $s->{$key} ne 'noSuchInstance';
+  } else {
+    warn "missing $description counter for $label\n";
+  }
+  return $count;
+}
+
+sub get_interface_speed {
+  my ($index, $s) = @_;
+  my $bytesps;
+  if (defined $s->{'x15'} && $s->{'x15'} =~ /^\d+$/ && $s->{'x15'} >= 4294 || !defined $s->{'5'} || $s->{'5'} !~ /^\d+$/) {
+    if (!$support64bit && $s->{'x15'} >= 34359) { # 34359/8 * 10**6 is just below 2**32
+      warn "interface too fast for 32-bit counters\n";
+    } else {
+      $bytesps = $s->{'x15'} * (1000000/8);
+    }
+  } elsif (defined $s->{'5'} && $s->{'5'} =~ /^\d+$/) {
+    $bytesps = int($s->{'5'} / 8)
+  } else {
+    warn "missing speed for interface $index\n";
+  }
+  return $bytesps;
+}
+
+sub parse_thresholds_specification {
+  my ($spec) = @_;
+  my (%w, %c);
+  my @parts = split(/,/, $spec);
+  if (@parts == 1) {
+    %c = $parts[0] eq '-' ? () : ('critical' => $parts[0]);
+  } elsif (@parts == 2) {
+    %w = $parts[0] eq '-' ? () : ('warning' => $parts[0]);
+    %c = $parts[1] eq '-' ? () : ('critical' => $parts[1]);
+  } else {
+    $plugin->nagios_die("invalid thresholds specification $spec\n");
+  }
+  return (keys %w == 0 && keys %c == 0 ? undef : Nagios::Plugin::Threshold->set_thresholds(%w, %c));
+}
+
+# Parse threshold specification:
+# A		A=critical threshold for input and output counters
+# A,B		A=warning, B=critical threshold for input and output counters
+# A,B,C,D	A=warning threshold for input counter, B=critical for input, C=warning for output, D=critical for output
+sub parse_in_out_thresholds_specification {
+  my ($spec) = @_;
+  my (%wi, %ci, %wo, %co);
+  my @parts = split(/,/, $spec);
+  if (@parts == 1) {
+    %ci = %co = $parts[0] eq '-' ? () : ('critical' => $parts[0]);
+  } elsif (@parts == 2) {
+    %wi = %wo = $parts[0] eq '-' ? () : ('warning' => $parts[0]);
+    %ci = %co = $parts[1] eq '-' ? () : ('critical' => $parts[1]);
+  } elsif (@parts == 4) {
+    %wi = $parts[0] eq '-' ? () : ('warning' => $parts[0]);
+    %ci = $parts[1] eq '-' ? () : ('critical' => $parts[1]);
+    %wo = $parts[2] eq '-' ? () : ('warning' => $parts[2]);
+    %co = $parts[3] eq '-' ? () : ('critical' => $parts[3]);
+  } else {
+    $plugin->nagios_die("invalid thresholds specification $spec\n");
+  }
+  my $ti = (keys %wi == 0 && keys %ci == 0 ? undef : Nagios::Plugin::Threshold->set_thresholds(%wi, %ci));
+  my $to = (keys %wo == 0 && keys %co == 0 ? undef : Nagios::Plugin::Threshold->set_thresholds(%wo, %co));
+  return ($ti, $to);
+}
+
+sub try_threshold {
+  my ($thresh, $value) = @_;
+  return defined $thresh ? $thresh->get_status($value) : OK;
+}
+
+sub add_report {
+  my ($report, $label, $status, $inclexcl) = @_;
+  #FIXME verbosity: clean up this
+  if ($status == CRITICAL) {
+    if ($inclexcl) {
+      $report->{'status'} = CRITICAL;
+      push @{$report->{'criticals'}}, $label;
+    }
+    push @{$report->{'reports'}}, $label.'['.($inclexcl ? 'CRITICAL' : 'CRIT(ign)').']';
+  } elsif ($status == WARNING) {
+    if ($inclexcl) {
+      $report->{'status'} = WARNING if $report->{'status'} == OK;
+      push @{$report->{'warnings'}}, $label;
+    }
+    push @{$report->{'reports'}}, $label.'['.($inclexcl ? 'WARNING' : 'WARN(ign)').']';
+  } else {
+    push @{$report->{'normals'}}, $label;
+    push @{$report->{'reports'}}, $label.'['.($inclexcl ? 'OK' : 'OK(ign)').']';
+  }
+}
+
+sub merge_report {
+  my ($report, $subreport, $label) = @_;
+  $report->{'status'} = max($report->{'status'}, $subreport->{'status'});
+  push @{$report->{'normals'}}, join(' ', $label, @{$subreport->{'normals'}}) if exists $subreport->{'normals'};
+  push @{$report->{'warnings'}}, join(' ', $label, @{$subreport->{'warnings'}}) if exists $subreport->{'warnings'};
+  push @{$report->{'criticals'}}, join(' ', $label, @{$subreport->{'criticals'}}) if exists $subreport->{'criticals'};
+}
+
+sub format_report {
+  my ($report) = @_;
+  my $out = '';
+  if ($report->{'status'} == OK) {
+    $out = join(' ', @{$report->{'normals'}}) if exists $report->{'normals'};
+  } elsif ($report->{'status'} == WARNING) {
+    $out = join(', ', @{$report->{'warnings'}});
+    $out .= ", OK: ".join(' ', @{$report->{'normals'}}) if exists $report->{'normals'};
+  } elsif ($report->{'status'} == CRITICAL) {
+    $out = join(', ', @{$report->{'criticals'}});
+    $out .= ", WARNING: ".join(', ', @{$report->{'warnings'}}) if exists $report->{'warnings'};
+    $out .= ", OK: ".join(' ', @{$report->{'normals'}}) if exists $report->{'normals'};
+  }
+  return $out;
+}
+
+# Format an integer according to specification.
+# 'h'	human modifier
+# 'b'	bits (don't append b)
+# 'B'	bytes (don't append B)
+# 'p'	percent
+# '.1p'	percent with one decimal	(implement later)
+# 'P'	packets
+sub format_integer {
+  my ($format, $value, $max) = @_;
+  my $out = '';
+  for (my $c = 0; $c < length $format; $c++) {
+    my $ch = substr($format, $c, 1);
+    if ($ch eq '%' && $c+1 < length $format) {
+      $ch = substr($format, ++$c, 1);
+      if ($ch eq 'h' && $c+1 < length $format) {
+        $ch = substr($format, ++$c, 1);
+        if ($ch eq 'b' || $ch eq 'P') {
+          $out .= human_readable_integer($value);
+        } elsif ($ch eq 'B') {
+          $out .= human_readable_integer(int(($value + 7)/8));
+        }
+      } elsif ($ch eq 'b' || $ch eq 'P') {
+        $out .= $value;
+      } elsif ($ch eq 'B') {
+        $out .= int(($value + 7)/8);
+      } elsif ($ch eq 'p' && defined $max) {
+        # Due to elapsed time rounding, the value may sometimes go beyond 100%
+        $out .= min(100, int(($value*100 + $max - 1)/$max));
+      } elsif ($ch eq '%') {
+        $out .= '%';
+      }
+      next;
+    }
+    $out .= $ch;
+  }
+  return $out;
+}
+
+sub human_readable_integer {
+  my ($i) = @_;
+  my $c;
+  for ($c = 0; $i >= 1000**($c+1); $c++) {}
+  my @u = qw(k M G T P E Z Y);
+  return $c == 0 ? $i : int(($i + 1000**$c - 1) / 1000**$c) . $u[$c-1];
+}
+
+sub get_interface_status {
+  my ($s) = @_;
+  return ('unspecified', CRITICAL) if !defined $s->{'8'} || $s->{'8'} !~ /^\d+$/;
+  my @status = qw(up down testing unknown dormant notPresent lowerLayerDown);
+  if (defined $s->{'7'} && $s->{'7'} =~ /^\d+$/) {
+    if ($s->{'7'} == 1) { # up
+      return ('unsupported', CRITICAL) if $s->{'8'} > @status;
+      return ('up', OK) if $s->{'8'} == 1;
+      return ($status[$s->{'8'} - 1], CRITICAL);
+    } elsif ($s->{'7'} == 2) { # down
+      return ('unsupported-adminDown', CRITICAL) if $s->{'8'} > @status;
+      return ('adminDown', OK) if $s->{'8'} == 2;
+      return ($status[$s->{'8'} - 1].'-adminDown', CRITICAL);
+    } elsif ($s->{'7'} == 3) { # testing
+      return ('unsupported-adminTesting', CRITICAL) if $s->{'8'} > @status;
+      return ($status[$s->{'8'} - 1].'-adminTesting', OK);
+    } else { # unsupported
+      return ('unsupported-adminUnsupported', CRITICAL) if $s->{'8'} > @status;
+      return ($status[$s->{'8'} - 1].'-adminUnsupported', CRITICAL);
+    }
+  }
+}
+
+sub filter_interface {
+  my ($filterspec, $s, $forcefield) = @_;
+  # FIXME: implement interface range matching, e.g. Gi0/31-Gi0/32
+  my $include = 1;
+  if (defined $filterspec) {
+    return (!defined $1 || $1 eq '+') if $filterspec =~ /^([-+])?all$/;
+    $include = 0 if substr($filterspec, 0, 1) ne '-';
+    my $inclexcl = 1;
+    my $field = $forcefield // 'name';
+    my $mode = '=';
+    foreach my $item (split_filter_spec($filterspec)) {
+      my $filtervalue;
+      if ($item =~ /^([+-])?(?:(name|descr|alias|index|type)([=:]))?(.*)$/) {
+        (my $newinclexcl, my $newfield, my $newmode, $filtervalue) = ($1, $2, $3, $4);
+        $inclexcl = ($newinclexcl eq '+' ? 1 : 0) if defined $newinclexcl;
+        $field = $newfield if defined $newfield && !defined $forcefield;
+        $mode = $newmode if defined $newmode;
+      } else {
+        $filtervalue = $item;
+      }
+      my $value;
+      $value = $s->{'3'} if $field eq 'type';
+      $value = $s->{'x1'} if $field eq 'name';
+      $value = $s->{'2'} if $field eq 'descr';
+      $value = $s->{'x18'} if $field eq 'alias';
+      $value = $s->{'idx'} if $field eq 'index';
+      if (defined $value) {
+        $include = $inclexcl if $mode eq '=' && $value eq $filtervalue;
+        $include = $inclexcl if $mode eq ':' && index(lc $value, lc $filtervalue) >= 0;
+      }
+    }
+  }
+  return $include;
+}
+
+sub split_filter_spec {
+  my ($spec) = @_;
+  my @items = ();
+  my $item = '';
+  for (my $c = 0; $c < length $spec; $c++) {
+    if (substr($spec, $c, 2) eq ',,') {
+      $item .= ',';
+      $c++;
+    } elsif (substr($spec, $c, 1) eq ',') {
+      push @items, $item;
+      $item = '';
+    } else {
+      $item .= substr($spec, $c, 1);
+    }
+  }
+  push @items, $item if $item ne '';
+  return @items;
+}
+
+# Parse label specification specified with --label option. Examples:
+# --label=descr		GigabitEthernet3/14
+# --label=name		Gi3/1
+# --label=alias		fw1-mlmdro:gi0/2 inside
+# --label=index		79
+# --label="%n [%i]"	Gi3/1 [79]
+sub get_interface_label {
+  my ($label, $s) = @_;
+  return $s->{'x1'} if $label eq 'name';
+  return $s->{'2'} if $label eq 'descr';
+  return $s->{'x18'} if $label eq 'alias';
+  return $s->{'idx'} if $label eq 'index';
+  my $out = '';
+  for (my $c = 0; $c < length $label; $c++) {
+    if (substr($label, $c, 1) eq '%' && $c+1 < length $label) {
+      my $ch = substr($label, ++$c, 1);
+      my $value;
+      if ($ch eq 'n') {
+        $value = $s->{'x1'};
+      } elsif ($ch eq 'd') {
+        $value = $s->{'2'};
+      } elsif ($ch eq 'a') {
+        $value = $s->{'x18'};
+      } elsif ($ch eq 'i') {
+        $value = $s->{'idx'};
+      } else {
+        $out .= $ch;
+        next;
+      }
+      $out .= $value // '';
+    } else {
+      $out .= substr($label, $c, 1);
+    }
+  }
+  return $out eq '' ? undef : $out;
+}
+
+sub add_perfdata {
+  my ($label, $value, $max, $unit, $threshold) = @_;
+  if (!defined $opt{'no-perfdata'}) {
+    if (defined $threshold) {
+      $plugin->add_perfdata(label => $label, value => $value, uom => $unit, min => 0, max => $max, threshold => $threshold);
+    } else {
+      $plugin->add_perfdata(label => $label, value => $value, uom => $unit, min => 0, max => $max);
+    }
+  }
+}
