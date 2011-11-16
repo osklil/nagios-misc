@@ -91,45 +91,91 @@ Getopt::Long::GetOptions(\%opt,
 ) || exit 1;
 
 if (defined $opt{'help'}) {
-  print "Usage: $0 -H ADDRESS [OPTION]...\n";
-  print "Check interfaces, including statistics, via SNMP (IF-MIB).\n";
-  print "\nGeneral options:\n";
-  print "  -H, --host=ADDRESS       address or name of host to check\n";
-  print "  -t, --timeout=SECONDS    total time for SNMP checks\n";
-  print "  -C, --community=NAME     SNMP community\n";
-  print "  -V, --snmp-version=VER   SNMP version (1, 2c, 3)\n";
-  print "  -p, --processes=COUNT    number of parallel check processes\n";
-  print "      --stats-dir=DIR      directory for cached statistics\n";
-  print "      --stats-file=FILE    file for cached statistics\n";
-  print "      --label=FORMAT       format of interface labels (see below)\n";
-  print "  -n, --no-perfdata        do not print any performance data\n";
-  print "  -v, --verbose            explain what is being done (incremental)\n";
-  print "      --help               display this help and exit\n";
-  print "      --version            output version information and exit\n";
-  print "\nThreshold options:\n";
-  # FIXME help: more about thresholds (THLD)
-  print "  -U, --utilization-thresholds=THLD  bandwidth utilization (in percent)\n";
-  print "  -B, --broadcast-thresholds=THLD    broadcast packet rates\n";
-  print "  -M, --multicast-thresholds=THLD    multicast packet rates\n";
-  print "      --unicast-thresholds=THLD      unicast packet rates\n";
-  print "      --non-unicast-thresholds=THLD  non-unicast packet rates\n";
-  print "  -E, --error-thresholds=THLD        error packet rates\n";
-  print "  -D, --discard-thresholds=THLD      discarded packet rates\n";
-  print "      --unknown-thresholds=THLD      unknown protocol packet input rate\n";
-  print "\nFilter options:\n";
-  # FIXME help: more about filters (FILTER)
-  print "  -F, --filter=FILTER                all checks\n";
-  print "  -S, --status-filter=FILTER         operational status checks\n";
-  print "      --promiscuous-filter=FILTER    promiscuous mode\n";
-  print "      --utilization-filter=FILTER    bandwidth utilization\n";
-  print "      --broadcast-filter=FILTER      broadcast packet rates\n";
-  print "      --multicast-filter=FILTER      multicast packet rates\n";
-  print "      --unicast-filter=FILTER        unicast packet rates\n";
-  print "      --non-unicast-filter=FILTER    non-unicast packet rates\n";
-  print "      --error-filter=FILTER          error packet rates\n";
-  print "      --discard-filter=FILTER        discarded packet rates\n";
-  print "      --unknown-filter=FILTER        unknown protocol packet input rate\n";
-  print "\nReport $PROGRAM bugs to <oskar\@osk.mine.nu>.\n";
+  print <<"__END__";
+Usage: $0 -H ADDRESS [OPTION]...
+Check interfaces, including statistics, via SNMP (IF-MIB).
+
+General options:
+  -H, --host=ADDRESS       address or name of host to check
+  -t, --timeout=SECONDS    total time for SNMP checks
+  -C, --community=NAME     SNMP community
+  -V, --snmp-version=VER   SNMP version (1, 2c, 3)
+  -p, --processes=COUNT    number of parallel check processes
+      --stats-dir=DIR      directory for cached statistics
+      --stats-file=FILE    file for cached statistics
+      --label=FORMAT       format of interface labels (see below)
+  -n, --no-perfdata        do not print any performance data
+  -v, --verbose            explain what is being done (incremental)
+      --help               display this help and exit
+      --version            output version information and exit
+
+Threshold options:
+  -U, --utilization-thresholds=THLD  bandwidth utilization (in percent)
+  -B, --broadcast-thresholds=THLD    broadcast packet rates
+  -M, --multicast-thresholds=THLD    multicast packet rates
+      --unicast-thresholds=THLD      unicast packet rates
+      --non-unicast-thresholds=THLD  non-unicast packet rates
+  -E, --error-thresholds=THLD        error packet rates
+  -D, --discard-thresholds=THLD      discarded packet rates
+      --unknown-thresholds=THLD      unknown protocol packet input rate
+
+Filter options:
+  -F, --filter=FILTER                all checks
+  -S, --status-filter=FILTER         operational status checks
+      --promiscuous-filter=FILTER    promiscuous mode
+      --utilization-filter=FILTER    bandwidth utilization
+      --broadcast-filter=FILTER      broadcast packet rates
+      --multicast-filter=FILTER      multicast packet rates
+      --unicast-filter=FILTER        unicast packet rates
+      --non-unicast-filter=FILTER    non-unicast packet rates
+      --error-filter=FILTER          error packet rates
+      --discard-filter=FILTER        discarded packet rates
+      --unknown-filter=FILTER        unknown protocol packet input rate
+
+All options except --unknown-thresholds expect a comma-separated set of
+thresholds:
+  input-warning,input-critical,output-warning,output-critical
+  warning,critical
+  critical
+
+Specify only two thresholds is the same as specifying the same thresholds
+for input and output. You can also omit the warning threshold completely,
+in which case they are assumed to be the same. Finally, you can omit any
+threshold by specifying it as `-', effectively disabling the check.
+
+Thresholds follow the usual Nagios format:
+  Value                  Okay if
+  95                     0 <= x <= 95
+  95:                    x >= 95
+  ~:95                   x <= 95
+  50:95                  50 <= x <= 95
+  @50:95                 x < 50 or x > 95
+
+See <http://nagiosplug.sourceforge.net/developer-guidelines.html> for more
+information.
+
+FILTER is a comma-separated list of match items in the following format:
+  [+|-][name|descr|alias|index|type][:|=]VALUE
+
+The match modifiers `+' and `-' control whether this item should be included
+(`+') or excluded (`-') from the final set. If the first item starts with a
+minus, then it is assumed that all items are included by default. Otherwise
+no items are included. `name', `descr' etc specify the IF-MIB field to
+match (default is name). The next character specifies match type:
+  =                      exact match, case sensitive
+  :                      substring match, case insensitive
+
+Additionally, there are some special filters:
+  +all, all              include everything
+  -all                   exclude everything
+
+Note that all match modifiers are carried on to the next item:
+  -name=Gi3/1,Gi3/2      exclude Gi3/1 and Gi3/2
+  -alias:down            exclude all interfaces with the word `down'
+                         in their user descriptions
+
+Report $PROGRAM bugs to <oskar\@osk.mine.nu>.
+__END__
   exit;
 }
 if (defined $opt{'version'}) {
