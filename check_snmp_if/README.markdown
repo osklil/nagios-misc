@@ -61,10 +61,10 @@ The latest code for check_snmp_if can be downloaded from GitHub:
 Requirements
 ------------
 
- * Perl 5.10.0 (or later)
+ * Perl 5.10.0 (or later).
    Debian: perl
 
- * Net::SNMP perl module
+ * Net::SNMP perl module.
    Debian: libnet-snmp-perl
 
 Usage
@@ -82,8 +82,8 @@ Please see the TODO file.
 References
 ----------
 
- * RFC 2863 - The Interfaces Group MIB
+ * RFC 2863 - The Interfaces Group MIB.
    <http://tools.ietf.org/html/rfc2863>
 
- * Nagios plug-in development guidelines
+ * Nagios plug-in development guidelines.
    <http://nagiosplug.sourceforge.net/developer-guidelines.html>
