@@ -1,3 +1,16 @@
-This repository contains various Nagios plugins and scripts.
+This repository contains various Nagios plugins and scripts, and some stuff for
+Centreon (<http://www.centreon.com>):
+
+ * auditcent
+
+ * check_by_ssh_master
+
+ * check_by_snmp_hr_lm
+
+ * check_snmp_if - Check status of interfaces using SNMP IF-MIB
+
+ * nagammu
+
+ * nagios-schedule-downtime
 
 Oskar Liljeblad <oskar@osk.mine.nu>
