@@ -149,7 +149,7 @@ Thresholds follow the usual Nagios format:
   95:                    x >= 95
   ~:95                   x <= 95
   50:95                  50 <= x <= 95
-  @50:95                 x < 50 or x > 95
+  \@50:95                 x < 50 or x > 95
 
 See <http://nagiosplug.sourceforge.net/developer-guidelines.html> for more
 information.
@@ -311,21 +311,21 @@ if (@indexes) {
       $nostatscount++;
     } else {
       my $filter = filter_interface($opt{'utilization-filter'}, $s);
-      my $bytesps = get_interface_speed($index, $s);
+      my $bitspeed = get_interface_speed($index, $s);
       # Cisco StackPorts may report 0 ifSpeed and ifHighSpeed
-      if (defined $bytesps && $bytesps != 0) {
+      if (defined $bitspeed && $bitspeed != 0) {
         my $inbytes = get_interface_counter_difference($label, $s, $os, 'input octet', '10', 'x6');
         if (defined $inbytes) {
-          my $inutil = int($inbytes / $elapsed / $bytesps * 100);
-          my $inprct = min(100, int(($inbytes/$elapsed*100 + $bytesps - 1)/$bytesps));
-          add_report($interface_report, format_integer('inData=%hBB/s(%p%%)', int($inbytes/$elapsed), $bytesps), try_threshold($in_util_thresh, $inutil), $filter);
+          my $inutil = int($inbytes / $elapsed / $bitspeed * 8 * 100);
+          my $inprct = min(100, int(($inbytes/$elapsed*100 + ($bitspeed/8) - 1)/($bitspeed/8)));
+          add_report($interface_report, format_integer('inData=%hBB/s(%p%%)', int($inbytes*8/$elapsed), $bitspeed), try_threshold($in_util_thresh, $inutil), $filter);
           add_perfdata("$label inData%", $inprct, 100, '%', $in_util_thresh);
         }
         my $outbytes = get_interface_counter_difference($label, $s, $os, 'output octet', '16', 'x10');
         if (defined $outbytes) {
-          my $oututil = int($outbytes / $elapsed / $bytesps * 100);
-          my $outprct = min(100, int(($outbytes/$elapsed*100 + $bytesps - 1)/$bytesps));
-          add_report($interface_report, format_integer('outData=%hBB/s(%p%%)', int($outbytes/$elapsed), $bytesps), try_threshold($out_util_thresh, $oututil), $filter);
+          my $oututil = int($outbytes / $elapsed / $bitspeed * 100);
+          my $outprct = min(100, int(($outbytes/$elapsed*100 + $bitspeed - 1)/$bitspeed));
+          add_report($interface_report, format_integer('outData=%hBB/s(%p%%)', int($outbytes/$elapsed), $bitspeed), try_threshold($out_util_thresh, $oututil), $filter);
           add_perfdata("$label outData%", $outprct, 100, '%', $out_util_thresh);
         }
       }
@@ -469,19 +469,19 @@ sub get_interface_counter_difference {
 
 sub get_interface_speed {
   my ($index, $s) = @_;
-  my $bytesps;
+  my $bitspeed;
   if (defined $s->{'x15'} && $s->{'x15'} =~ /^\d+$/ && $s->{'x15'} >= 4294 || !defined $s->{'5'} || $s->{'5'} !~ /^\d+$/) {
     if (!$support64bit && $s->{'x15'} >= 34359) { # 34359/8 * 10**6 is just below 2**32
       warn "interface too fast for 32-bit counters\n";
     } else {
-      $bytesps = $s->{'x15'} * (1000000/8);
+      $bitspeed = $s->{'x15'} * 1000000;
     }
   } elsif (defined $s->{'5'} && $s->{'5'} =~ /^\d+$/) {
-    $bytesps = int($s->{'5'} / 8)
+    $bitspeed = $s->{'5'};
   } else {
     warn "missing speed for interface $index\n";
   }
-  return $bytesps;
+  return $bitspeed;
 }
 
 sub parse_thresholds_specification {
