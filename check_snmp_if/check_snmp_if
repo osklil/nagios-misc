@@ -216,8 +216,8 @@ if (defined $opt{'version'}) {
   exit;
 }
 
-$plugin->nagios_die("snmp version 1 is not supported\n") if $opt{'snmp-version'} eq '1' || $opt{'snmp-version'} eq 'snmpv1';
-$plugin->nagios_die("missing --host/-H parameter\n") if !defined $opt{'host'};
+$plugin->nagios_exit(UNKNOWN, "snmp version 1 is not supported\n") if $opt{'snmp-version'} eq '1' || $opt{'snmp-version'} eq 'snmpv1';
+$plugin->nagios_exit(UNKNOWN, "missing --host/-H parameter\n") if !defined $opt{'host'};
 if (exists $opt{'stats-file'}) {
   if (substr($opt{'stats-file'}, 0, 1) ne '/' && $opt{'stats-file'} !~ /\//) {
     $opt{'stats-file'} = File::Spec->catfile($opt{'stats-dir'}, $opt{'stats-file'});
@@ -234,7 +234,7 @@ my ($in_nucast_thresh, $out_nucast_thresh) = parse_in_out_thresholds_specificati
 my ($in_error_thresh, $out_error_thresh) = parse_in_out_thresholds_specification($opt{'error-thresholds'});
 my ($in_discard_thresh, $out_discard_thresh) = parse_in_out_thresholds_specification($opt{'discard-thresholds'});
 my $in_unknown_thresh = parse_thresholds_specification($opt{'unknown-thresholds'});
-$plugin->nagios_die("surplus operand\n") if @ARGV;
+$plugin->nagios_exit(UNKNOWN, "surplus operand\n") if @ARGV;
 
 my $retries = 1; # default number of SNMP retries
 my ($session, $error) = Net::SNMP->session(
@@ -242,10 +242,10 @@ my ($session, $error) = Net::SNMP->session(
     -community => $opt{'community'},
     -version => $opt{'snmp-version'},
     -timeout => int($opt{'timeout'}/($retries+1)));
-$plugin->nagios_die("cannot open SNMP session: $error\n") if !defined $session;
+$plugin->nagios_exit(UNKNOWN, "cannot open SNMP session: $error\n") if !defined $session;
 
 my $result = $session->get_table(-baseoid => '1.3.6.1.2.1.2.2.1.1');
-$plugin->nagios_die("cannot get description table (IF-MIB::ifType): ".$session->error."\n") if !defined $result;
+$plugin->nagios_exit(UNKNOWN, "cannot get description table (IF-MIB::ifType): ".$session->error."\n") if !defined $result;
 
 my @indexes;
 foreach my $oid (keys %{$result}) {
@@ -272,19 +272,19 @@ if (@indexes) {
     $session->close();
     my %sockets;
     foreach (1..$processes) {
-      socketpair(my $socket, my $socket2, AF_UNIX, SOCK_STREAM, PF_UNSPEC) // $plugin->nagios_die("cannot create sockets: $!\n");
-      my $pid = fork() // $plugin->nagios_die("cannot create process: $!\n");
+      socketpair(my $socket, my $socket2, AF_UNIX, SOCK_STREAM, PF_UNSPEC) // $plugin->nagios_exit(UNKNOWN, "cannot create sockets: $!\n");
+      my $pid = fork() // $plugin->nagios_exit(UNKNOWN, "cannot create process: $!\n");
       if ($pid == 0) {
         select $socket; $| = 1; select STDOUT;
         close $socket2;
         my ($session, $error) = Net::SNMP->session(-hostname => $opt{'host'}, -community => $opt{'community'}, -version => $opt{'snmp-version'});
-        $plugin->nagios_die("cannot open SNMP session: $error\n") if !defined $session;
+        $plugin->nagios_exit(UNKNOWN, "cannot open SNMP session: $error\n") if !defined $session;
         for (;;) {
-          read($socket, my $data, 4) // $plugin->nagios_die("cannot receive from parent: $!\n");
+          read($socket, my $data, 4) // $plugin->nagios_exit(UNKNOWN, "cannot receive from parent: $!\n");
           my ($index) = unpack('l', $data);
           last if $index < 0;
           my $stats = get_interface_stats($session, $index);
-          store_fd($stats, $socket) // $plugin->nagios_die("cannot send to parent: $!\n");
+          store_fd($stats, $socket) // $plugin->nagios_exit(UNKNOWN, "cannot send to parent: $!\n");
         }
         $session->close();
         exit;
@@ -292,19 +292,19 @@ if (@indexes) {
       select $socket2; $| = 1; select STDOUT;
       close $socket;
       $sockets{$_} = $socket2;
-      print $socket2 pack('l', shift @indexes) // $plugin->nagios_die("cannot write to process: $!\n");
+      print $socket2 pack('l', shift @indexes) // $plugin->nagios_exit(UNKNOWN, "cannot write to process: $!\n");
     }
     while (keys %sockets) {
       my ($readin, $readout) = ('');
       vec($readin, fileno($_), 1) = 1 foreach values %sockets;
-      select($readout = $readin, undef, undef, undef) >= 0 || $plugin->nagios_die("cannot monitor sockets: $!\n");
+      select($readout = $readin, undef, undef, undef) >= 0 || $plugin->nagios_exit(UNKNOWN, "cannot monitor sockets: $!\n");
       foreach my $child (keys %sockets) {
         my $socket = $sockets{$child};
         if (vec($readout, fileno($socket), 1)) {
-          my $stats = fd_retrieve($socket) // $plugin->nagios_die("cannot receive from process: $!\n");
+          my $stats = fd_retrieve($socket) // $plugin->nagios_exit(UNKNOWN, "cannot receive from process: $!\n");
           $newstats{$stats->{'idx'}} = $stats;
           my $nextindex = @indexes ? shift @indexes : -1;
-          print $socket pack('l', $nextindex) // $plugin->nagios_die("cannot send to process: $!\n");
+          print $socket pack('l', $nextindex) // $plugin->nagios_exit(UNKNOWN, "cannot send to process: $!\n");
           if ($nextindex <= 0) {
             close $socket;
             delete $sockets{$child};
@@ -316,7 +316,7 @@ if (@indexes) {
   }
 
   if (-f $opt{'stats-file'}) {
-    $oldstats = retrieve($opt{'stats-file'}) // $plugin->nagios_die("cannot read statistics file $opt{'stats-file'}: $!\n");
+    $oldstats = retrieve($opt{'stats-file'}) // $plugin->nagios_exit(UNKNOWN, "cannot read statistics file $opt{'stats-file'}: $!\n");
   }
   foreach my $index (sort { $a <=> $b } keys %newstats) {
     my $s = $newstats{$index};
@@ -470,7 +470,7 @@ sub get_interface_stats {
   push @request, "1.3.6.1.2.1.2.2.1.$_.$index" for (2, 3, 5, 7, 8, 10..20);
   push @request, "1.3.6.1.2.1.31.1.1.1.$_.$index" for (1..13, 15, 16, 18, 19);
   my $result = $session->get_request(-varbindlist => \@request);
-  $plugin->nagios_die("cannot get additional SNMP values: ".$session->error."\n") if !defined $result;
+  $plugin->nagios_exit(UNKNOWN, "cannot get additional SNMP values: ".$session->error."\n") if !defined $result;
   my $stats = { 'idx' => $index, 'tm' => time };
   foreach my $oid (@request) {
     my $key = $oid;
@@ -529,7 +529,7 @@ sub parse_thresholds_specification {
     %w = $parts[0] eq '-' ? () : ('warning' => $parts[0]);
     %c = $parts[1] eq '-' ? () : ('critical' => $parts[1]);
   } else {
-    $plugin->nagios_die("invalid thresholds specification $spec\n");
+    $plugin->nagios_exit(UNKNOWN, "invalid thresholds specification $spec\n");
   }
   return (keys %w == 0 && keys %c == 0 ? undef : Nagios::Plugin::Threshold->set_thresholds(%w, %c));
 }
@@ -553,7 +553,7 @@ sub parse_in_out_thresholds_specification {
     %wo = $parts[2] eq '-' ? () : ('warning' => $parts[2]);
     %co = $parts[3] eq '-' ? () : ('critical' => $parts[3]);
   } else {
-    $plugin->nagios_die("invalid thresholds specification $spec\n");
+    $plugin->nagios_exit(UNKNOWN, "invalid thresholds specification $spec\n");
   }
   my $ti = (keys %wi == 0 && keys %ci == 0 ? undef : Nagios::Plugin::Threshold->set_thresholds(%wi, %ci));
   my $to = (keys %wo == 0 && keys %co == 0 ? undef : Nagios::Plugin::Threshold->set_thresholds(%wo, %co));
