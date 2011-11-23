@@ -70,18 +70,32 @@ Getopt::Long::GetOptions(\%opt,
   'promiscuous-filter=s',
   'utilization-thresholds|U=s',
   'utilization-filter=s',
+  'in-utilization-filter=s',
+  'out-utilization-filter=s',
   'broadcast-thresholds|B=s',
   'broadcast-filter=s',
+  'in-broadcast-filter=s',
+  'out-broadcast-filter=s',
   'multicast-thresholds|M=s',
   'multicast-filter=s',
+  'in-multicast-filter=s',
+  'out-multicast-filter=s',
   'unicast-thresholds=s',
   'unicast-filter=s',
+  'in-unicast-filter=s',
+  'out-unicast-filter=s',
   'non-unicast-thresholds=s',
   'non-unicast-filter=s',
+  'in-non-unicast-filter=s',
+  'out-non-unicast-filter=s',
   'error-thresholds|E=s',
   'error-filter=s',
+  'in-error-filter=s',
+  'out-error-filter=s',
   'discard-thresholds|D=s',
   'discard-filter=s',
+  'in-discard-filter=s',
+  'out-discard-filter=s',
   'unknown-thresholds=s',
   'unknown-filter=s',
   'no-perfdata|n',
@@ -110,27 +124,41 @@ General options:
       --version            output version information and exit
 
 Threshold options:
-  -U, --utilization-thresholds=THLD  bandwidth utilization (in percent)
-  -B, --broadcast-thresholds=THLD    broadcast packet rates
-  -M, --multicast-thresholds=THLD    multicast packet rates
-      --unicast-thresholds=THLD      unicast packet rates
-      --non-unicast-thresholds=THLD  non-unicast packet rates
-  -E, --error-thresholds=THLD        error packet rates
-  -D, --discard-thresholds=THLD      discarded packet rates
-      --unknown-thresholds=THLD      unknown protocol packet input rate
+  -U, --utilization-thresholds=THLD    bandwidth utilization (in percent)
+  -B, --broadcast-thresholds=THLD      broadcast packet rates
+  -M, --multicast-thresholds=THLD      multicast packet rates
+      --unicast-thresholds=THLD        unicast packet rates
+      --non-unicast-thresholds=THLD    non-unicast packet rates
+  -E, --error-thresholds=THLD          error packet rates
+  -D, --discard-thresholds=THLD        discarded packet rates
+      --unknown-thresholds=THLD        unknown protocol packet input rate
 
 Filter options:
-  -F, --filter=FILTER                all checks
-  -S, --status-filter=FILTER         operational status checks
-      --promiscuous-filter=FILTER    promiscuous mode
-      --utilization-filter=FILTER    bandwidth utilization
-      --broadcast-filter=FILTER      broadcast packet rates
-      --multicast-filter=FILTER      multicast packet rates
-      --unicast-filter=FILTER        unicast packet rates
-      --non-unicast-filter=FILTER    non-unicast packet rates
-      --error-filter=FILTER          error packet rates
-      --discard-filter=FILTER        discarded packet rates
-      --unknown-filter=FILTER        unknown protocol packet input rate
+  -F, --filter=FILTER                  all checks
+  -S, --status-filter=FILTER           operational status checks
+      --promiscuous-filter=FILTER      promiscuous mode
+      --utilization-filter=FILTER      bandwidth utilization
+      --in-utilization-filter=FILTER   input bandwidth utilization
+      --out-utilization-filter=FILTER  output bandwidth utilization
+      --broadcast-filter=FILTER        broadcast packet rates
+      --in-broadcast-filter=FILTER     broadcast packet input rate
+      --out-broadcast-filter=FILTER    broadcast packet output rate
+      --multicast-filter=FILTER        multicast packet rates
+      --in-multicast-filter=FILTER     multicast packet input rate
+      --out-multicast-filter=FILTER    multicast packet output rate
+      --unicast-filter=FILTER          unicast packet rates
+      --in-unicast-filter=FILTER       unicast packet input rate
+      --out-unicast-filter=FILTER      unicast packet output rate
+      --non-unicast-filter=FILTER      non-unicast packet rates
+      --in-non-unicast-filter=FILTER   non-unicast packet input rate
+      --out-non-unicast-filter=FILTER  non-unicast packet output rate
+      --error-filter=FILTER            error packet rates
+      --in-error-filter=FILTER         error packet input rate
+      --out-error-filter=FILTER        error packet output rate
+      --discard-filter=FILTER          discard packet rates
+      --in-discard-filter=FILTER       discard packet input rate
+      --out-discard-filter=FILTER      discard packet output rate
+      --unknown-filter=FILTER          unknown protocol packet input rate
 
 All options except --unknown-thresholds expect a comma-separated set of
 thresholds:
@@ -310,7 +338,6 @@ if (@indexes) {
     if ($elapsed == 0) {
       $nostatscount++;
     } else {
-      my $filter = filter_interface($opt{'utilization-filter'}, $s);
       my $bitspeed = get_interface_speed($index, $s);
       # Cisco StackPorts may report 0 ifSpeed and ifHighSpeed
       if (defined $bitspeed && $bitspeed != 0) {
@@ -318,95 +345,103 @@ if (@indexes) {
         if (defined $inbytes) {
           my $inutil = int($inbytes / $elapsed / $bitspeed * 8 * 100);
           my $inprct = min(100, int(($inbytes/$elapsed*100 + ($bitspeed/8) - 1)/($bitspeed/8)));
-          add_report($interface_report, format_integer('inData=%hBB/s(%p%%)', int($inbytes*8/$elapsed), $bitspeed), try_threshold($in_util_thresh, $inutil), $filter);
+          my $f = filter_interface($opt{'utilization-filter'}, $s) && filter_interface($opt{'in-utilization-filter'}, $s);
+          add_report($interface_report, format_integer('inData=%hBB/s(%p%%)', int($inbytes*8/$elapsed), $bitspeed), try_threshold($in_util_thresh, $inutil), $f);
           add_perfdata("$label inData%", $inprct, 100, '%', $in_util_thresh);
         }
         my $outbytes = get_interface_counter_difference($label, $s, $os, 'output octet', '16', 'x10');
         if (defined $outbytes) {
           my $oututil = int($outbytes / $elapsed / $bitspeed * 100);
           my $outprct = min(100, int(($outbytes/$elapsed*100 + $bitspeed - 1)/$bitspeed));
-          add_report($interface_report, format_integer('outData=%hBB/s(%p%%)', int($outbytes/$elapsed), $bitspeed), try_threshold($out_util_thresh, $oututil), $filter);
+          my $f = filter_interface($opt{'utilization-filter'}, $s) && filter_interface($opt{'out-utilization-filter'}, $s);
+          add_report($interface_report, format_integer('outData=%hBB/s(%p%%)', int($outbytes/$elapsed), $bitspeed), try_threshold($out_util_thresh, $oututil), $f);
           add_perfdata("$label outData%", $outprct, 100, '%', $out_util_thresh);
         }
       }
 
-      $filter = filter_interface($opt{'broadcast-filter'}, $s);
       my $inbcastpkts = get_interface_counter_difference($label, $s, $os, 'input broadcast packet', 'x3', 'x9');
       if (defined $inbcastpkts) {
         my $v = int($inbcastpkts/$elapsed);
-        add_report($interface_report, format_integer('inBcast=%hPpps', $v), try_threshold($in_bcast_thresh, $v), $filter);
+        my $f = filter_interface($opt{'broadcast-filter'}, $s) && filter_interface($opt{'in-broadcast-filter'}, $s);
+        add_report($interface_report, format_integer('inBcast=%hPpps', $v), try_threshold($in_bcast_thresh, $v), $f);
       }
       my $outbcastpkts = get_interface_counter_difference($label, $s, $os, 'output broadcast packet', 'x5', 'x13');
       if (defined $outbcastpkts) {
         my $v = int($outbcastpkts/$elapsed);
-        add_report($interface_report, format_integer('outBcast=%hPpps', $v), try_threshold($out_bcast_thresh, $v), $filter);
+        my $f = filter_interface($opt{'broadcast-filter'}, $s) && filter_interface($opt{'out-broadcast-filter'}, $s);
+        add_report($interface_report, format_integer('outBcast=%hPpps', $v), try_threshold($out_bcast_thresh, $v), $f);
       }
 
-      $filter = filter_interface($opt{'multicast-filter'}, $s);
       my $inmcastpkts = get_interface_counter_difference($label, $s, $os, 'input multicast packet', 'x2', 'x8');
       if (defined $inmcastpkts) {
         my $v = int($inmcastpkts/$elapsed);
-        add_report($interface_report, format_integer('inMcast=%hPpps', $v), try_threshold($in_mcast_thresh, $v), $filter);
+        my $f = filter_interface($opt{'multicast-filter'}, $s) && filter_interface($opt{'in-multicast-filter'}, $s);
+        add_report($interface_report, format_integer('inMcast=%hPpps', $v), try_threshold($in_mcast_thresh, $v), $f);
       }
       my $outmcastpkts = get_interface_counter_difference($label, $s, $os, 'output multicast packet', 'x4', 'x12');
       if (defined $outmcastpkts) {
         my $v = int($outmcastpkts/$elapsed);
-        add_report($interface_report, format_integer('outMcast=%hPpps', $v), try_threshold($out_mcast_thresh, $v), $filter);
+        my $f = filter_interface($opt{'multicast-filter'}, $s) && filter_interface($opt{'out-multicast-filter'}, $s);
+        add_report($interface_report, format_integer('outMcast=%hPpps', $v), try_threshold($out_mcast_thresh, $v), $f);
       }
 
-      $filter = filter_interface($opt{'unicast-filter'}, $s);
       my $inucastpkts = get_interface_counter_difference($label, $s, $os, 'input unicast packet', '11', 'x7');
       if (defined $inucastpkts) {
         my $v = int($inucastpkts/$elapsed);
-        add_report($interface_report, format_integer('inUcast=%hPpps', $v), try_threshold($in_ucast_thresh, $v), $filter);
+        my $f = filter_interface($opt{'unicast-filter'}, $s) && filter_interface($opt{'in-unicast-filter'}, $s);
+        add_report($interface_report, format_integer('inUcast=%hPpps', $v), try_threshold($in_ucast_thresh, $v), $f);
       }
       my $outucastpkts = get_interface_counter_difference($label, $s, $os, 'output unicast packet', '17', 'x11');
       if (defined $outucastpkts) {
         my $v = int($outucastpkts/$elapsed);
-        add_report($interface_report, format_integer('outUcast=%hPpps', $v), try_threshold($out_ucast_thresh, $v), $filter);
+        my $f = filter_interface($opt{'unicast-filter'}, $s) && filter_interface($opt{'out-unicast-filter'}, $s);
+        add_report($interface_report, format_integer('outUcast=%hPpps', $v), try_threshold($out_ucast_thresh, $v), $f);
       }
 
-      $filter = filter_interface($opt{'non-unicast-filter'}, $s);
       my $innucastpkts = get_interface_counter_difference($label, $s, $os, 'input non-unicast packet', '12');
       if (defined $innucastpkts) {
         my $v = int($innucastpkts/$elapsed);
-        add_report($interface_report, format_integer('inNUcast=%hPpps', $v), try_threshold($in_nucast_thresh, $v), $filter);
+        my $f = filter_interface($opt{'non-unicast-filter'}, $s) && filter_interface($opt{'in-non-unicast-filter'}, $s);
+        add_report($interface_report, format_integer('inNUcast=%hPpps', $v), try_threshold($in_nucast_thresh, $v), $f);
       }
       my $outnucastpkts = get_interface_counter_difference($label, $s, $os, 'output non-unicast packet', '18');
       if (defined $outnucastpkts) {
         my $v = int($outnucastpkts/$elapsed);
-        add_report($interface_report, format_integer('outNUcast=%hPpps', $v), try_threshold($out_nucast_thresh, $v), $filter);
+        my $f = filter_interface($opt{'non-unicast-filter'}, $s) && filter_interface($opt{'out-non-unicast-filter'}, $s);
+        add_report($interface_report, format_integer('outNUcast=%hPpps', $v), try_threshold($out_nucast_thresh, $v), $f);
       }
 
-      $filter = filter_interface($opt{'error-filter'}, $s);
       my $inerrorpkts = get_interface_counter_difference($label, $s, $os, 'input error packet', '14');
       if (defined $inerrorpkts) {
         my $v = int($inerrorpkts/$elapsed);
-        add_report($interface_report, format_integer('inErrors=%hPpps', $v), try_threshold($in_error_thresh, $v), $filter);
+        my $f = filter_interface($opt{'error-filter'}, $s) && filter_interface($opt{'in-error-filter'}, $s);
+        add_report($interface_report, format_integer('inErrors=%hPpps', $v), try_threshold($in_error_thresh, $v), $f);
       }
       my $outerrorpkts = get_interface_counter_difference($label, $s, $os, 'output error packet', '20');
       if (defined $outerrorpkts) {
         my $v = int($outerrorpkts/$elapsed);
-        add_report($interface_report, format_integer('outErrors=%hPpps', $v), try_threshold($out_error_thresh, $v), $filter);
+        my $f = filter_interface($opt{'error-filter'}, $s) && filter_interface($opt{'out-error-filter'}, $s);
+        add_report($interface_report, format_integer('outErrors=%hPpps', $v), try_threshold($out_error_thresh, $v), $f);
       }
 
-      $filter = filter_interface($opt{'discard-filter'}, $s);
       my $indiscardpkts = get_interface_counter_difference($label, $s, $os, 'input discard packet', '13');
       if (defined $indiscardpkts) {
         my $v = int($indiscardpkts/$elapsed);
-        add_report($interface_report, format_integer('inDiscards=%hPpps', $v), try_threshold($in_discard_thresh, $v), $filter);
+        my $f = filter_interface($opt{'discard-filter'}, $s) && filter_interface($opt{'in-discard-filter'}, $s);
+        add_report($interface_report, format_integer('inDiscards=%hPpps', $v), try_threshold($in_discard_thresh, $v), $f);
       }
       my $outdiscardpkts = get_interface_counter_difference($label, $s, $os, 'output discard packet', '19');
       if (defined $outdiscardpkts) {
         my $v = int($outdiscardpkts/$elapsed);
-        add_report($interface_report, format_integer('outDiscards=%hPpps', $v), try_threshold($out_discard_thresh, $v), $filter);
+        my $f = filter_interface($opt{'discard-filter'}, $s) && filter_interface($opt{'out-discard-filter'}, $s);
+        add_report($interface_report, format_integer('outDiscards=%hPpps', $v), try_threshold($out_discard_thresh, $v), $f);
       }
 
-      $filter = filter_interface($opt{'unknown-filter'}, $s);
       my $inunknownpkts = get_interface_counter_difference($label, $s, $os, 'input unknown protocol packet', '15');
       if (defined $inunknownpkts) {
         my $v = int($inunknownpkts/$elapsed);
-        add_report($interface_report, format_integer('inUnknowns=%hPpps', $v), try_threshold($in_unknown_thresh, $v), $filter);
+        my $f = filter_interface($opt{'unknown-filter'}, $s);
+        add_report($interface_report, format_integer('inUnknowns=%hPpps', $v), try_threshold($in_unknown_thresh, $v), $f);
       }
     }
 
