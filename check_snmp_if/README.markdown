@@ -24,6 +24,8 @@ be using SNMP version 1 - one being that it does not support 64-bit values.
 In the author's experience however, most devices that support SNMP version 1
 also support version 2 - usually without modifications.
 
+check_snmp_if is written in Perl.
+
 Author and Feedback
 -------------------
 
@@ -64,8 +66,11 @@ Requirements
  * Perl 5.10.0 (or later).
    Debian: perl
 
- * Net::SNMP perl module.
+ * Net::SNMP Perl module.
    Debian: libnet-snmp-perl
+
+ * Nagios::Plugin Perl module.
+   Debian: libnagios-plugin-perl
 
 Usage
 -----
