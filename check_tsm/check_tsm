@@ -1,0 +1,238 @@
+#!/usr/bin/perl -w
+#
+# check_tsm - Perform Tivoli Storage Manager server checks for Nagios
+#
+# Copyright (C) 2011 Oskar Liljeblad
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+# Run check_tsm --help for usage information.
+# Written by Oskar Liljeblad <oskar@osk.mine.nu>.
+#
+
+use strict;
+use File::Spec;
+use File::Temp qw(tempdir);
+use Getopt::Long;
+use Nagios::Plugin;
+use Nagios::Plugin::Threshold;
+
+my $PROGRAM = 'check_tsm';
+my $VERSION = '0.2';
+
+my $default_tsm_dir = '/opt/tivoli/tsm/client/ba/bin';
+my $plugin = Nagios::Plugin->new(shortname => $PROGRAM);
+my %opt = ('tsm-directory' => $default_tsm_dir);
+my @checks;
+Getopt::Long::config('bundling');
+Getopt::Long::GetOptions(\%opt, 'host|H=s', 'username|U=s', 'password|P=s',
+  'tsm-directory=s', 'warning|w=s', 'critical|c=s', 'help', 'version',
+  '<>' => sub {
+    push @checks, {
+      'type' => $_[0]->{'name'},
+      'warning' => $opt{'warning'}, #$opt{'warning'} eq '-' ? undef : $opt{'warning'},
+      'critical' => $opt{'critical'}, #$opt{'critical'} eq '-' ? undef : $opt{'critical'},
+    };
+  }) || exit UNKNOWN;
+if ($opt{'help'}) {
+  print "Usage: $0 [OPTION]... CHECK...\n";
+  print "Perform Tivoli Storage Manager server checks and report status for Nagios.\n";
+  print "\nOptions:\n";
+  print "  -H, --host=ADDRESS        specify server address\n";
+  print "  -U, --username=USERNAME   specify administrative account username\n";
+  print "  -P, --password=PASSWORD   specify administrative account password\n";
+  print "      --tsm-directory=PATH  override default TSM directory\n";
+  print "  -w, --warning=THRESHOLD   warning threshold\n";
+  print "  -c, --critical=THRESHOLD  critical threshold\n";
+  print "      --help                display this help and exit\n";
+  print "      --version             output version information and exit\n";
+  print "\nAvailable checks:\n";
+  print "  drives                    number of online drives\n";
+  print "  paths                     number of online paths\n";
+  print "  dbspace                   database space utilization (in \%)\n";
+  print "  logspace                  log space utilization (in \%)\n";
+  print "  badvols                   number of volumes in error state or read-only\n";
+  print "  freelibvols               number of library volumes in scratch state\n";
+  print "\nThresholds follow the usual Nagios format:\n";
+  print "  Value                  Okay if\n";
+  print "  95                     0 <= x <= 95\n";
+  print "  95:                    x >= 95\n";
+  print "  ~:95                   x <= 95\n";
+  print "  50:95                  50 <= x <= 95\n";
+  print "  \@50:95                 x < 50 or x > 95\n";
+  print "\nThe default TSM directory is `$default_tsm_dir'.\n";
+  print "\nReport bugs to <oskar\@osk.mine.nu>.\n";
+  exit;
+}
+if (defined $opt{'version'}) {
+  print "$PROGRAM $VERSION\n";
+  print "Copyright (C) 2011 Oskar Liljeblad\n";
+  print "License AGPLv3+: GNU Affero GPL version 3 or later <http://gnu.org/licenses/agpl.html>.\n";
+  print "This is free software: you are free to change and redistribute it.\n";
+  print "There is NO WARRANTY, to the extent permitted by law.\n";
+  print "\nWritten by Oskar Liljeblad.\n";
+  exit;
+}
+
+$plugin->nagios_exit(UNKNOWN, "host not set\n") if !defined $opt{'host'};
+$plugin->nagios_exit(UNKNOWN, "username not set\n") if !defined $opt{'username'};
+$plugin->nagios_exit(UNKNOWN, "password not set\n") if !defined $opt{'password'};
+$plugin->nagios_exit(UNKNOWN, "no check specified\n") if !@checks;
+
+foreach my $check (@checks) {
+  if ($check->{'type'} eq 'drives') {
+    $check->{'text'} = 'Online drives';
+    $check->{'query'} = "select count(*) from drives where online='YES'";
+    $check->{'warning'} //= '2:';
+    $check->{'critical'} //= '1:';
+  } elsif ($check->{'type'} eq 'paths') {
+    $check->{'text'} = 'Online paths';
+    $check->{'query'} = "select count(*) from paths where online='YES' and destination_type='DRIVE'";
+    $check->{'warning'} //= '2:';
+    $check->{'critical'} //= '1:';
+  } elsif ($check->{'type'} eq 'dbspace') {
+    $check->{'text'} = 'Database space utilization';
+    $check->{'query'} = "select used_db_space_mb, tot_file_system_mb from db";
+    $check->{'warning'} //= 90;
+    $check->{'critical'} //= 95;
+  } elsif ($check->{'type'} eq 'logspace') {
+    $check->{'text'} = 'Log space utilization';
+    $check->{'query'} = "select used_space_mb, total_space_mb from log";
+    $check->{'warning'} //= 90;
+    $check->{'critical'} //= 95;
+  } elsif ($check->{'type'} eq 'badvols') {
+    $check->{'text'} = 'Error or read-only volumes';
+    $check->{'query'} = "select count(*) from volumes where error_state='YES' or access='READONLY'";
+    $check->{'warning'} //= 0;
+    $check->{'critical'} //= 0;
+  } elsif ($check->{'type'} eq 'reclaimvols') {
+    $check->{'text'} = 'Volumes needing reclamation';
+    $check->{'query'} = "select count(*) from volumes join stgpools on volumes.stgpool_name=stgpools.stgpool_name where volumes.pct_reclaim>stgpools.reclaim and volumes.status='FULL' and volumes.access='READWRITE'";
+    $check->{'warning'} //= 50;
+    $check->{'critical'} //= 100;
+  } elsif ($check->{'type'} eq 'freelibvols') {
+    $check->{'text'} = 'Scratch library volumes';
+    $check->{'query'} = "select count(*) from libvolumes where status='Scratch'";
+    $check->{'warning'} //= '5:';
+    $check->{'critical'} //= '1:';
+  } else {
+    $plugin->nagios_exit(UNKNOWN, "unknown check ".$check->{'type'}."\n");
+  }
+}
+
+my $tmp_dir = tempdir(CLEANUP => 1);
+$plugin->nagios_exit(UNKNOWN, "cannot create temporary directory - $!\n") if !defined $tmp_dir;
+
+delete $ENV{'LANG'};
+$ENV{'DSM_DIR'} = $tmp_dir;
+$ENV{'DSM_LOG'} = $tmp_dir;
+$ENV{'DSM_CONFIG'} = File::Spec->catfile($tmp_dir, 'dsm.opt');
+
+my $sys_file = File::Spec->catfile($tmp_dir, 'dsm.sys');
+open(my $sys_fh, '>', $sys_file) || $plugin->nagios_exit(UNKNOWN, "cannot create file $sys_file - $!\n");
+print $sys_fh "servername default\n";
+print $sys_fh 'tcpserveraddress ', $opt{'host'}, "\n";
+close($sys_fh) || $plugin->nagios_exit(UNKNOWN, "cannot close file $sys_file - $!\n");
+
+my $opt_file = File::Spec->catfile($tmp_dir, 'dsm.opt');
+open(my $opt_fh, '>', $opt_file) || $plugin->nagios_exit(UNKNOWN, "cannot create file $opt_file - $!\n");
+close($opt_fh) || $plugin->nagios_exit(UNKNOWN, "cannot close file $opt_file - $!\n");
+
+foreach my $link_file (qw(EN_US en_US)) {
+  my $src_file = File::Spec->catfile($opt{'tsm-directory'}, $link_file);
+  my $dst_file = File::Spec->catfile($tmp_dir, $link_file);
+  symlink($src_file, $dst_file) || $plugin->nagios_exit(UNKNOWN, "cannot create symbolic link $dst_file - $!\n");
+}
+
+chdir $tmp_dir or $plugin->nagios_exit(UNKNOWN, "cannot change to $opt{'tsm-directory'} - $!\n");
+
+my (@normals, @warnings, @criticals);
+
+pipe (my $ih, my $child_oh) // $plugin->nagios_exit(UNKNOWN, "cannot create pipes: $!\n");
+pipe (my $child_ih, my $oh) // $plugin->nagios_exit(UNKNOWN, "cannot create pipes: $!\n");
+my $pid = fork() // $plugin->nagios_exit(UNKNOWN, "cannot create process: $!\n");
+if ($pid == 0) {
+  close $ih;
+  close $oh;
+  open (STDOUT, '>&', $child_oh) or exit 1;
+  open (STDIN, '<&', $child_ih) or exit 1;
+  my @cmd = ('dsmadmc', '-id='.$opt{'username'}, '-password='.$opt{'password'}, '-dataonly=yes', '-tab');
+  exec @cmd;
+  exit 1;
+  # File::Temp does not remove temporary directories in child processes, phew.
+}
+
+chdir '/' or $plugin->nagios_exit(UNKNOWN, "cannot change to / - $!\n");
+close $child_oh;
+close $child_ih;
+print $oh $_->{'query'}, "\n" foreach @checks;
+close $oh;
+my @output = <$ih>; # read errors will be detected as a short read (logic below)
+close $ih;
+waitpid $pid, 0 or $plugin->nagios_exit(UNKNOWN, "cannot wait for process - $!\n");
+chomp foreach @output;
+
+foreach my $check (@checks) {
+  $plugin->nagios_exit(UNKNOWN, "missing responses from dsmadmc (check $check->{'type'})\n") if !@output;
+  my $result = shift @output;
+  if ($check->{'type'} eq 'drives' || $check->{'type'} eq 'paths' || $check->{'type'} eq 'freelibvols') {
+    $plugin->nagios_exit(UNKNOWN, "invalid response from dsmadmc (check $check->{'type'})\n$result\n") if $result !~ /^\d+$/;
+    my $outdata = "$check->{'text'}: $result";
+    my $threshold = Nagios::Plugin::Threshold->set_thresholds(warning => $check->{'warning'}, critical => $check->{'critical'});
+    $plugin->add_perfdata(label => $check->{'type'}, value => $result, min => 0, threshold => $threshold);
+    my $status = $threshold->get_status($result);
+    push @normals, $outdata if $status == OK;
+    push @warnings, $outdata if $status == WARNING;
+    push @criticals, $outdata if $status == CRITICAL;
+  }
+  elsif ($check->{'type'} eq 'dbspace' || $check->{'type'} eq 'logspace') {
+    $plugin->nagios_exit(UNKNOWN, "invalid response from dsmadmc (check $check->{'type'})\n$result\n") if $result !~ /^\d+(\.\d+)?\t\d+(\.\d+)?$/;
+    my ($usedspace, $totalspace) = map { int } split(/\t/, $result);
+    my $warnspace = int($check->{'warning'} * $totalspace / 100);
+    my $critspace = int($check->{'critical'} * $totalspace / 100);
+    my $util = int($usedspace / $totalspace * 100);
+    my $outdata = "$check->{'text'}: $util\% ($usedspace/$totalspace MB)";
+    my $threshold = Nagios::Plugin::Threshold->set_thresholds(warning => $warnspace, critical => $critspace);
+    $plugin->add_perfdata(label => 'usedspace', value => $usedspace, uom => 'MB', min => 0, max => $totalspace, threshold => $threshold);
+    my $status = $threshold->get_status($usedspace);
+    push @normals, $outdata if $status == OK;
+    push @warnings, $outdata if $status == WARNING;
+    push @criticals, $outdata if $status == CRITICAL;
+  }
+  elsif ($check->{'type'} eq 'badvols' || $check->{'type'} eq 'reclaimvols') {
+    $plugin->nagios_exit(UNKNOWN, "invalid response from dsmadmc (check $check->{'type'})\n$result\n") if $result !~ /^\d+$/;
+    my $outdata = "$check->{'text'}: $result";
+    my $threshold = Nagios::Plugin::Threshold->set_thresholds(warning => $check->{'warning'}, critical => $check->{'critical'});
+    $plugin->add_perfdata(label => $check->{'type'}, value => $result, min => 0, threshold => $threshold);
+    my $status = $threshold->get_status($result);
+    push @normals, $outdata if $status == OK;
+    push @warnings, $outdata if $status == WARNING;
+    push @criticals, $outdata if $status == CRITICAL;
+  }
+}
+
+my @reports;
+if (@criticals) {
+  push @reports, join(', ', @criticals);
+  push @reports, 'WARNING: '.join(', ', @warnings) if @warnings;
+  push @reports, 'OK: '.join(', ', @normals) if @normals;
+  $plugin->nagios_exit(CRITICAL, join(', ', @reports));
+} elsif (@warnings) {
+  push @reports, join(', ', @warnings);
+  push @reports, 'OK: '.join(', ', @normals) if @normals;
+  $plugin->nagios_exit(WARNING, join(', ', @reports));
+} elsif (@normals) {
+  push @reports, join(', ', @normals);
+  $plugin->nagios_exit(OK, join(', ', @reports));
+}
