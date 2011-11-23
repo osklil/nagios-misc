@@ -72,8 +72,6 @@ Usage
 
 Run `check_snmp_if --help' for usage information.
 
-FIXME more here
-
 Future
 ------
 
