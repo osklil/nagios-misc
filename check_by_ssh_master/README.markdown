@@ -77,3 +77,6 @@ References
 
  * Nagios plug-in development guidelines.
    <http://nagiosplug.sourceforge.net/developer-guidelines.html>
+
+ * Nagios Plugins.
+   <http://nagiosplug.sourceforge.net/>
