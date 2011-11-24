@@ -4,7 +4,7 @@ check_by_ssh_master
 Introduction
 ------------
 
-check_by_ssh_master is a Nagios plugin that always plugins to be executed on
+check_by_ssh_master is a Nagios plugin that allows plugins to be executed on
 remote hosts over SSH.  It is similar to check_by_ssh but has two
 advantages: It uses one or more master connections to improve speed, and it
 supports escaping of parameters which may be necessary because SSH executes
