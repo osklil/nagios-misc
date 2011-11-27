@@ -22,6 +22,7 @@
 #
 
 use strict;
+use sort 'stable';
 use File::Spec;
 use File::Temp qw(tempdir);
 use Getopt::Long;
@@ -64,14 +65,17 @@ if ($opt{'help'}) {
   print "  logspace                  log space utilization (in \%)\n";
   print "  badvols                   number of volumes in error state or read-only\n";
   print "  freelibvols               number of library volumes in scratch state\n";
+  print "  reqs                      number of active requests\n";
   print "\nThresholds follow the usual Nagios format:\n";
-  print "  Value                  Okay if\n";
-  print "  95                     0 <= x <= 95\n";
-  print "  95:                    x >= 95\n";
-  print "  ~:95                   x <= 95\n";
-  print "  50:95                  50 <= x <= 95\n";
-  print "  \@50:95                 x < 50 or x > 95\n";
-  print "\nThe default TSM directory is `$default_tsm_dir'.\n";
+  print "  Value                 Okay if\n";
+  print "  95                    0 <= x <= 95\n";
+  print "  95:                   x >= 95\n";
+  print "  ~:95                  x <= 95\n";
+  print "  50:95                 50 <= x <= 95\n";
+  print "  \@50:95                x < 50 or x > 95\n";
+  print "\nWarning and critical thresholds can be specified multiple times,\n";
+  print "before the checks they apply to.\n";
+  print "The default TSM directory is `$default_tsm_dir'.\n";
   print "\nReport bugs to <oskar\@osk.mine.nu>.\n";
   exit;
 }
@@ -96,40 +100,56 @@ foreach my $check (@checks) {
     $check->{'query'} = "select count(*) from drives where online='YES'";
     $check->{'warning'} //= '2:';
     $check->{'critical'} //= '1:';
+    $check->{'order'} = 0;
   } elsif ($check->{'type'} eq 'paths') {
     $check->{'text'} = 'Online paths';
     $check->{'query'} = "select count(*) from paths where online='YES' and destination_type='DRIVE'";
     $check->{'warning'} //= '2:';
     $check->{'critical'} //= '1:';
+    $check->{'order'} = 0;
   } elsif ($check->{'type'} eq 'dbspace') {
     $check->{'text'} = 'Database space utilization';
     $check->{'query'} = "select used_db_space_mb, tot_file_system_mb from db";
     $check->{'warning'} //= 90;
     $check->{'critical'} //= 95;
+    $check->{'order'} = 0;
   } elsif ($check->{'type'} eq 'logspace') {
     $check->{'text'} = 'Log space utilization';
     $check->{'query'} = "select used_space_mb, total_space_mb from log";
     $check->{'warning'} //= 90;
     $check->{'critical'} //= 95;
+    $check->{'order'} = 0;
   } elsif ($check->{'type'} eq 'badvols') {
     $check->{'text'} = 'Error or read-only volumes';
     $check->{'query'} = "select count(*) from volumes where error_state='YES' or access='READONLY'";
     $check->{'warning'} //= 0;
     $check->{'critical'} //= 0;
+    $check->{'order'} = 0;
   } elsif ($check->{'type'} eq 'reclaimvols') {
     $check->{'text'} = 'Volumes needing reclamation';
     $check->{'query'} = "select count(*) from volumes join stgpools on volumes.stgpool_name=stgpools.stgpool_name where volumes.pct_reclaim>stgpools.reclaim and volumes.status='FULL' and volumes.access='READWRITE'";
     $check->{'warning'} //= 50;
     $check->{'critical'} //= 100;
+    $check->{'order'} = 0;
   } elsif ($check->{'type'} eq 'freelibvols') {
     $check->{'text'} = 'Scratch library volumes';
     $check->{'query'} = "select count(*) from libvolumes where status='Scratch'";
     $check->{'warning'} //= '5:';
     $check->{'critical'} //= '1:';
+    $check->{'order'} = 0;
+  } elsif ($check->{'type'} eq 'reqs') {
+    $check->{'text'} = 'Outstanding requests';
+    $check->{'query'} = 'query request';
+    $check->{'warning'} //= 0;
+    $check->{'critical'} //= 1; # Critical not used since we only return 0 or 1
+    $check->{'order'} = 1;
   } else {
     $plugin->nagios_exit(UNKNOWN, "unknown check ".$check->{'type'}."\n");
   }
 }
+
+# This needs stable sort in order so that reqs checks are always last
+@checks = sort { $a->{'order'} <=> $b->{'order'} } @checks;
 
 my $tmp_dir = tempdir(CLEANUP => 1);
 $plugin->nagios_exit(UNKNOWN, "cannot create temporary directory - $!\n") if !defined $tmp_dir;
@@ -215,6 +235,25 @@ foreach my $check (@checks) {
     my $outdata = "$check->{'text'}: $result";
     my $threshold = Nagios::Plugin::Threshold->set_thresholds(warning => $check->{'warning'}, critical => $check->{'critical'});
     $plugin->add_perfdata(label => $check->{'type'}, value => $result, min => 0, threshold => $threshold);
+    my $status = $threshold->get_status($result);
+    push @normals, $outdata if $status == OK;
+    push @warnings, $outdata if $status == WARNING;
+    push @criticals, $outdata if $status == CRITICAL;
+  }
+  elsif ($check->{'type'} eq 'reqs') {
+    my $threshold = Nagios::Plugin::Threshold->set_thresholds(warning => $check->{'warning'}, critical => $check->{'critical'});
+    if ($result =~ /^ANR8346I /) { # QUERY REQUEST: No requests are outstanding.
+      shift @output;
+      $result = 0; 
+    } elsif ($result =~ /^ANR8352I /) { # Requests outstanding:
+      # This may eat up more than it should. Therefore reqs should be last.
+      for ($result = 0; @output && $output[0] =~ /^ANR/; $result++) {
+        shift @output;
+      }
+    } else {
+      $plugin->nagios_exit(UNKNOWN, "invalid response from dsmadmc (check $check->{'type'})\n$result\n");
+    }
+    my $outdata = "$check->{'text'}: $result";
     my $status = $threshold->get_status($result);
     push @normals, $outdata if $status == OK;
     push @warnings, $outdata if $status == WARNING;

@@ -7,7 +7,10 @@ Introduction
 check_tsm is a Nagios plugin that performs various checks against IBM Tivoli
 Storage Manager (TSM) servers.  It can check number of online drives and
 paths, database and log space, as well as number of free, reclaimable or
-offline volumes.
+offline volumes, and if there are outstanding requests.  check_tsm uses
+dsmadmc to do its work, but it automatically sets up dsmadmc's environment
+and configuration files.  All checks are done in the same session to improve
+performance.
 
 check_tsm is written in Perl.
 
