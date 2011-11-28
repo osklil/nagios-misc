@@ -83,6 +83,6 @@ References
    <http://nagiosplug.sourceforge.net/developer-guidelines.html>
 
  * LanMgr-Mib-II from Appendix C - MIB Object Types for Windows NT, Windows NT Server Resource Kit:
-   <http://www.microsoft.com/resources/documentation/windowsnt/4/server/reskit/en-us/net/sur_mib.mspx>
+   <http://www.microsoft.com/resources/documentation/windowsnt/4/server/reskit/en-us/net/sur_mib.mspx>.
    The MIB file is available in %systemroot%\system32\LMMIB2.MIB on Windows systems where the SNMP
    Server is installed.
