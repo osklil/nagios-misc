@@ -43,6 +43,7 @@ Getopt::Long::GetOptions(\%opt,
   'community|C=s',
   'snmp-version|V=s',
   'get-individual',
+  'comma-separated',
   'ignore-case',
   'list|l',
   'help',
@@ -53,13 +54,15 @@ if (defined $opt{'help'}) {
   print <<"__END__";
 Usage: $0 -H ADDRESS [OPTION]... SERVICE...
 Check running services using LanMgr-Mib-II-MIB SNMP requests, supported on
-Microsoft Windows systems with the SNMP Service.
+Microsoft Windows systems with the SNMP Service. Exit with critical state
+if any service specified on the command line is not running.
 
   -H, --host=ADDRESS       address or name of host to check
   -t, --timeout=SECONDS    total time for SNMP checks
   -C, --community=NAME     SNMP community
   -V, --snmp-version=VER   SNMP version (1, 2c, 3)
   -l, --list               list all services and their states
+      --comma-separated    services on command line are comma-separated
       --ignore-case        ignore case when matching service names
       --get-individual     get specified services rather than all
       --help               display this help and exit
@@ -80,6 +83,15 @@ if (defined $opt{'version'}) {
 }
 $plugin->nagios_exit(UNKNOWN, "missing --host/-H parameter\n") if !defined $opt{'host'};
 
+my @service_names;
+if ($opt{'comma-separated'}) {
+  push @service_names, split(/,/, $_) foreach @ARGV;
+} else {
+  @service_names = @ARGV;
+}
+$plugin->nagios_exit(UNKNOWN, "--ignore-case can not be used in combination with --get-individual") if $opt{'ignore-case'} && $opt{'get-individual'};
+$plugin->nagios_exit(UNKNOWN, "no services to check") if !@service_names && !$opt{'list'};
+
 my $retries = 1; # default number of SNMP retries
 my ($session, $error) = Net::SNMP->session(
     -hostname => $opt{'host'},
@@ -87,12 +99,11 @@ my ($session, $error) = Net::SNMP->session(
     -version => $opt{'snmp-version'},
     -timeout => int($opt{'timeout'}/($retries+1)));
 $plugin->nagios_exit(UNKNOWN, "cannot open SNMP session: $error\n") if !defined $session;
-
 my $baseoid = '1.3.6.1.4.1.77.1.2.3.1';
+
 my $result;
 if ($opt{'get-individual'} && !$opt{'list'}) {
-  $plugin->nagios_exit(UNKNOWN, "--ignore-case can not be used in combination with --get-individual") if $opt{'ignore-case'};
-  foreach my $name (@ARGV) {
+  foreach my $name (@service_names) {
     my $tailoid = length($name).'.'.join('.', map(ord, split(//, $name)));
     my @oids = map { "$baseoid.$_.$tailoid" } (2, 3);
     my $subresult = $session->get_request(-varbindlist => \@oids);
@@ -132,11 +143,10 @@ if ($opt{'list'}) {
   }
   exit;
 }
-$plugin->nagios_exit(UNKNOWN, "No services to check") if !@ARGV;	
 
 my $status = OK;
 my %state;
-foreach my $name (@ARGV) {
+foreach my $name (@service_names) {
   my $oid = get_service_oid_by_name($name);
   my $state_id = get_service_state_by_oid($oid);
   $status = CRITICAL if $state_id != 7;
