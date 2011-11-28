@@ -47,6 +47,10 @@ The latest code for check_snmp_hr_lm can be downloaded from GitHub:
 
  * <https://github.com/osklil/nagios-misc/zipball/master>
 
+The Git repository is hosted on GitHub:
+
+ * <https://github.com/osklil/nagios-misc>
+
 Requirements
 ------------
 
