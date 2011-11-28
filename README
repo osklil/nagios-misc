@@ -3,9 +3,9 @@ Centreon (<http://www.centreon.com>):
 
  * auditcent
 
- * check_by_snmp_hr_lm
-
  * check_by_ssh_master - Execute commands with SSH master connections
+
+ * check_snmp_hr_lm - Various Host Resources and LAN Manager SNMP checks
 
  * check_snmp_if - Check status of interfaces using SNMP IF-MIB
 
