@@ -1,0 +1,169 @@
+#!/usr/bin/perl -w
+#
+# check_snmp_lm_services - Check running services using SNMP
+#
+# Copyright (C) 2011 Oskar Liljeblad
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+# Run check_snmp_lm_services --help for usage information.
+# Written by Oskar Liljeblad <oskar@osk.mine.nu>.
+#
+
+require 5.10.0;
+use strict;
+use Net::SNMP;
+use Getopt::Long;
+use Nagios::Plugin;
+
+my $PROGRAM = 'check_snmp_lm_services';
+my $VERSION = '0.1';
+
+my $plugin = Nagios::Plugin->new(shortname => $PROGRAM);
+my %opt = (
+  'community' => 'public',
+  'snmp-version' => 1,
+  'timeout' => 30, # 30 is the default Net::SNMP timeout
+);
+Getopt::Long::config('bundling');
+Getopt::Long::GetOptions(\%opt,
+  'host|H=s',
+  'timeout|t=i',
+  'community|C=s',
+  'snmp-version|V=s',
+  'get-individual',
+  'ignore-case',
+  'list|l',
+  'help',
+  'version'
+) || exit UNKNOWN;
+
+if (defined $opt{'help'}) {
+  print <<"__END__";
+Usage: $0 -H ADDRESS [OPTION]... SERVICE...
+Check running services using LanMgr-Mib-II-MIB SNMP requests, supported on
+Microsoft Windows systems with the SNMP Service.
+
+  -H, --host=ADDRESS       address or name of host to check
+  -t, --timeout=SECONDS    total time for SNMP checks
+  -C, --community=NAME     SNMP community
+  -V, --snmp-version=VER   SNMP version (1, 2c, 3)
+  -l, --list               list all services and their states
+      --ignore-case        ignore case when matching service names
+      --get-individual     get specified services rather than all
+      --help               display this help and exit
+      --version            output version information and exit
+
+Report $PROGRAM bugs to <oskar\@osk.mine.nu>.
+__END__
+  exit;
+}
+if (defined $opt{'version'}) {
+  print "$PROGRAM $VERSION\n";
+  print "Copyright (C) 2011 Oskar Liljeblad\n";
+  print "License AGPLv3+: GNU Affero GPL version 3 or later <http://gnu.org/licenses/agpl.html>.\n";
+  print "This is free software: you are free to change and redistribute it.\n";
+  print "There is NO WARRANTY, to the extent permitted by law.\n";
+  print "\nWritten by Oskar Liljeblad.\n";
+  exit;
+}
+$plugin->nagios_exit(UNKNOWN, "missing --host/-H parameter\n") if !defined $opt{'host'};
+
+my $retries = 1; # default number of SNMP retries
+my ($session, $error) = Net::SNMP->session(
+    -hostname => $opt{'host'},
+    -community => $opt{'community'},
+    -version => $opt{'snmp-version'},
+    -timeout => int($opt{'timeout'}/($retries+1)));
+$plugin->nagios_exit(UNKNOWN, "cannot open SNMP session: $error\n") if !defined $session;
+
+my $baseoid = '1.3.6.1.4.1.77.1.2.3.1';
+my $result;
+if ($opt{'get-individual'} && !$opt{'list'}) {
+  $plugin->nagios_exit(UNKNOWN, "--ignore-case can not be used in combination with --get-individual") if $opt{'ignore-case'};
+  foreach my $name (@ARGV) {
+    my $tailoid = length($name).'.'.join('.', map(ord, split(//, $name)));
+    my @oids = map { "$baseoid.$_.$tailoid" } (2, 3);
+    my $subresult = $session->get_request(-varbindlist => \@oids);
+    if (!defined $subresult) {
+      $plugin->nagios_exit(UNKNOWN, "cannot get service status: ".$session->error."\n") if $session->error !~ /noSuchName/;
+    } else {
+      $result->{$_} = $subresult->{$_} foreach @oids;
+      $result->{"$baseoid.1.$tailoid"} = $name;
+    }
+  }
+} else {
+  $result = $session->get_table(-baseoid => $baseoid);
+  $plugin->nagios_exit(UNKNOWN, "cannot get services table: ".$session->error."\n") if !defined $result;
+}
+
+my %services;
+foreach my $key (keys %{$result}) {
+  if (substr($key, 0, length("$baseoid.1.")) eq "$baseoid.1.") {
+    my $oid = substr($key, length("$baseoid.1."));
+    my $name = $result->{"$baseoid.1.$oid"};
+    if (defined $name) {
+      if ($opt{'ignore-case'}) {
+        $services{lc $name} = $oid;
+      } else {
+        $services{$name} = $oid;
+      }
+    }
+  }
+}
+
+my @state_name = ('Unknown', 'Uninstalled', 'Pending install', 'Pending uninstall', 'Pending continue', 'Pending pause', 'Paused', 'Running');
+
+if ($opt{'list'}) {
+  foreach my $name (sort keys %services) {
+    my $state_id = get_service_state_by_oid($services{$name});
+    print "$name: $state_name[$state_id]\n";
+  }
+  exit;
+}
+$plugin->nagios_exit(UNKNOWN, "No services to check") if !@ARGV;	
+
+my $status = OK;
+my %state;
+foreach my $name (@ARGV) {
+  my $oid = get_service_oid_by_name($name);
+  my $state_id = get_service_state_by_oid($oid);
+  $status = CRITICAL if $state_id != 7;
+  push @{$state{$state_id}}, defined $oid ? $result->{"$baseoid.1.$oid"} : $name;
+}
+my @results;
+foreach my $state_id (keys %state) {
+  push @results, $state_name[$state_id].': '.join(', ', @{$state{$state_id}});
+}
+$plugin->nagios_exit($status, join(', ', @results));
+
+sub get_service_oid_by_name {
+  my ($name) = @_;
+  return $opt{'ignore-case'} ? $services{lc $name} : $services{$name};
+}
+
+sub get_service_state_by_oid {
+  my ($oid) = @_;
+  return 0 if !defined $oid; # Unknown
+  my $install = $result->{"$baseoid.2.$oid"};
+  my $operating = $result->{"$baseoid.3.$oid"};
+  return 0 if !defined $install || $install !~ /^[1-4]$/ || !defined $operating || $operating !~ /^[1-4]$/; # Unknown
+  return 1 if $install == 1; # Uninstalled
+  return 2 if $install == 2; # Pending install
+  return 3 if $install == 3; # Pending uninstall
+  return 4 if $operating == 2; # Pending continue
+  return 5 if $operating == 3; # Pending pause
+  return 6 if $operating == 4; # Paused
+  return 7; # Running
+}
