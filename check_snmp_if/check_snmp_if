@@ -111,18 +111,18 @@ Usage: $0 -H ADDRESS [OPTION]...
 Check interfaces, including statistics, via SNMP (IF-MIB).
 
 General options:
-  -H, --host=ADDRESS       address or name of host to check
-  -t, --timeout=SECONDS    total time for SNMP checks
-  -C, --community=NAME     SNMP community
-  -V, --snmp-version=VER   SNMP version (1, 2c, 3)
-  -p, --processes=COUNT    number of parallel check processes
-      --stats-dir=DIR      directory for cached statistics
-      --stats-file=FILE    file for cached statistics
-      --label=FORMAT       format of interface labels (see below)
-  -n, --no-perfdata        do not print any performance data
-  -v, --verbose            explain what is being done (incremental)
-      --help               display this help and exit
-      --version            output version information and exit
+  -H, --host=ADDRESS           address or name of host to check
+  -t, --timeout=SECONDS        total time for SNMP checks
+  -C, --community=NAME         SNMP community
+  -V, --snmp-version=VERSION   SNMP version (1, 2c, 3)
+  -p, --processes=COUNT        number of parallel check processes
+      --stats-dir=DIR          directory for cached statistics
+      --stats-file=FILE        file for cached statistics
+      --label=FORMAT           format of interface labels (see below)
+  -n, --no-perfdata            do not print any performance data
+  -v, --verbose                explain what is being done (incremental)
+      --help                   display this help and exit
+      --version                output version information and exit
 
 Threshold options:
   -U, --utilization-thresholds=THLD    bandwidth utilization (in percent)
