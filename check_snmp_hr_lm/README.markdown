@@ -11,6 +11,9 @@ Manager SNMP checks:
    Check running services using LanMgr-Mib-II-MIB SNMP requests, as
    supported on most Microsoft Windows systems.
 
+ * check_snmp_hr_processes
+   Check running processes using HOST-RESOURCES-V2-MIB SNMP requests.
+
 The check_snmp_hr_lm plugins are written in Perl.
 
 Author and Feedback
