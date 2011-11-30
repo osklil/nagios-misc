@@ -67,7 +67,7 @@ if any service specified on the command line is not running.
   -C, --community=NAME     SNMP community
   -V, --snmp-version=VER   SNMP version (1, 2c, 3)
   -l, --list               list all services and their states
-      --state=STATE        match state instead of default "running"
+      --state=STATE        match state instead of default `running'
       --comma-separated    services on command line are comma-separated
       --ignore-case        ignore case when matching service names
       --get-individual     get specified services rather than all
