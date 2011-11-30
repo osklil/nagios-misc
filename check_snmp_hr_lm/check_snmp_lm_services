@@ -30,11 +30,14 @@ use Nagios::Plugin;
 my $PROGRAM = 'check_snmp_lm_services';
 my $VERSION = '0.1';
 
+my @state_name = ('Unknown', 'Uninstalled', 'Pending install', 'Pending uninstall', 'Pending continue', 'Pending pause', 'Paused', 'Running');
+
 my $plugin = Nagios::Plugin->new(shortname => $PROGRAM);
 my %opt = (
   'community' => 'public',
   'snmp-version' => 1,
   'timeout' => 30, # 30 is the default Net::SNMP timeout
+  'state' => 'running',
 );
 Getopt::Long::config('bundling');
 Getopt::Long::GetOptions(\%opt,
@@ -42,12 +45,14 @@ Getopt::Long::GetOptions(\%opt,
   'timeout|t=i',
   'community|C=s',
   'snmp-version|V=s',
+  'state=s',
   'get-individual',
   'comma-separated',
   'ignore-case',
   'list|l',
   'help',
   'version'
+  # '<>' => sub { push @chk_services, [ $_, $opt{'state'} ] },
 ) || exit UNKNOWN;
 
 if (defined $opt{'help'}) {
@@ -62,11 +67,17 @@ if any service specified on the command line is not running.
   -C, --community=NAME     SNMP community
   -V, --snmp-version=VER   SNMP version (1, 2c, 3)
   -l, --list               list all services and their states
+      --state=STATE        match state instead of default "running"
       --comma-separated    services on command line are comma-separated
       --ignore-case        ignore case when matching service names
       --get-individual     get specified services rather than all
       --help               display this help and exit
       --version            output version information and exit
+
+The following states are available:
+
+  unknown, uninstalled, pending-install, pending-uninstall,
+  pending-continue, pending-pause, paused, running
 
 Report $PROGRAM bugs to <oskar\@osk.mine.nu>.
 __END__
@@ -82,6 +93,9 @@ if (defined $opt{'version'}) {
   exit;
 }
 $plugin->nagios_exit(UNKNOWN, "missing --host/-H parameter\n") if !defined $opt{'host'};
+
+my $want_state = parse_state_name($opt{'state'});
+$plugin->nagios_exit(UNKNOWN, "unknown state `$opt{'state'}'\n") if !defined $want_state;
 
 my @service_names;
 if ($opt{'comma-separated'}) {
@@ -136,7 +150,6 @@ foreach my $key (keys %{$result}) {
   }
 }
 
-my @state_name = ('Unknown', 'Uninstalled', 'Pending install', 'Pending uninstall', 'Pending continue', 'Pending pause', 'Paused', 'Running');
 
 if ($opt{'list'}) {
   foreach my $name (sort keys %services) {
@@ -151,7 +164,7 @@ my %state;
 foreach my $name (@service_names) {
   my $oid = get_service_oid_by_name($name);
   my $state_id = get_service_state_by_oid($oid);
-  $status = CRITICAL if $state_id != 7;
+  $status = CRITICAL if $state_id != $want_state;
   push @{$state{$state_id}}, defined $oid ? $result->{"$baseoid.1.$oid"} : $name;
 }
 my @results;
@@ -178,4 +191,13 @@ sub get_service_state_by_oid {
   return 5 if $operating == 3; # Pending pause
   return 6 if $operating == 4; # Paused
   return 7; # Running
+}
+
+sub parse_state_name {
+  my ($state) = @_;
+  $state =~ s/-/ /;
+  for (my $c = 0; $c < @state_name; $c++) {
+    return $c if lc $state eq lc $state_name[$c];
+  }
+  return undef;
 }
