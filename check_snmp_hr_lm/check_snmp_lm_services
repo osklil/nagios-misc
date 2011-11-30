@@ -168,7 +168,7 @@ foreach my $name (@service_names) {
   push @{$state{$state_id}}, defined $oid ? $result->{"$baseoid.1.$oid"} : $name;
 }
 my @results;
-foreach my $state_id (keys %state) {
+foreach my $state_id (sort keys %state) {
   push @results, $state_name[$state_id].': '.join(', ', @{$state{$state_id}});
 }
 $plugin->nagios_exit($status, join(', ', @results));
