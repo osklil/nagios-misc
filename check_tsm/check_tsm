@@ -224,7 +224,7 @@ foreach my $check (@checks) {
     my $util = int($usedspace / $totalspace * 100);
     my $outdata = "$check->{'text'}: $util\% ($usedspace/$totalspace MB)";
     my $threshold = Nagios::Plugin::Threshold->set_thresholds(warning => $warnspace, critical => $critspace);
-    $plugin->add_perfdata(label => 'usedspace', value => $usedspace, uom => 'MB', min => 0, max => $totalspace, threshold => $threshold);
+    $plugin->add_perfdata(label => $check->{'type'}, value => $usedspace, uom => 'MB', min => 0, max => $totalspace, threshold => $threshold);
     my $status = $threshold->get_status($usedspace);
     push @normals, $outdata if $status == OK;
     push @warnings, $outdata if $status == WARNING;
