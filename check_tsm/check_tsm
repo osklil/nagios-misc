@@ -38,7 +38,7 @@ my %opt = ('tsm-directory' => $default_tsm_dir);
 my @checks;
 Getopt::Long::config('bundling');
 Getopt::Long::GetOptions(\%opt, 'host|H=s', 'username|U=s', 'password|P=s',
-  'tsm-directory=s', 'warning|w=s', 'critical|c=s', 'help', 'version',
+  'tsm-directory=s', 'warning|w=s', 'critical|c=s', 'bytes', 'help', 'version',
   '<>' => sub {
     push @checks, {
       'type' => $_[0]->{'name'},
@@ -56,6 +56,7 @@ if ($opt{'help'}) {
   print "      --tsm-directory=PATH  override default TSM directory\n";
   print "  -w, --warning=THRESHOLD   warning threshold\n";
   print "  -c, --critical=THRESHOLD  critical threshold\n";
+  print "      --bytes               report performance data in bytes, not MB\n";
   print "      --help                display this help and exit\n";
   print "      --version             output version information and exit\n";
   print "\nAvailable checks:\n";
@@ -224,7 +225,11 @@ foreach my $check (@checks) {
     my $util = int($usedspace / $totalspace * 100);
     my $outdata = "$check->{'text'}: $util\% ($usedspace/$totalspace MB)";
     my $threshold = Nagios::Plugin::Threshold->set_thresholds(warning => $warnspace, critical => $critspace);
-    $plugin->add_perfdata(label => $check->{'type'}, value => $usedspace, uom => 'MB', min => 0, max => $totalspace, threshold => $threshold);
+    if ($opt{'bytes'}) {
+      $plugin->add_perfdata(label => $check->{'type'}, value => $usedspace*1024*1024, uom => 'B', min => 0, max => $totalspace, threshold => $threshold);
+    } else {
+      $plugin->add_perfdata(label => $check->{'type'}, value => $usedspace, uom => 'MB', min => 0, max => $totalspace, threshold => $threshold);
+    }
     my $status = $threshold->get_status($usedspace);
     push @normals, $outdata if $status == OK;
     push @warnings, $outdata if $status == WARNING;
