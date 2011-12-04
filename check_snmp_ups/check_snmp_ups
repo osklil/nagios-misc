@@ -186,67 +186,58 @@ push @request, $sysUpTime_oid;
 my $result = $session->get_request(-varbindlist => \@request);
 $plugin->nagios_exit(UNKNOWN, "cannot get SNMP (UPS-MIB) status: ".$session->error."\n") if !defined $result;
 
-my $status = OK;
-my (@report_head, @reports_normal, @reports_critical, @reports_warning);
-
 @request = ();
-my $in_lines = $result->{"$baseoid.3.2.0"};
-$in_lines = 0 if !defined $in_lines || $in_lines !~ /^\d+$/;
+my $in_lines = get_result("$baseoid.3.2.0", qr/^\d+$/, 'number of input lines (UPS-MIB::upsInputNumLines)');
 push @request, "$baseoid.3.3.1.2.$_", "$baseoid.3.3.1.3.$_", "$baseoid.3.3.1.4.$_", "$baseoid.3.3.1.5.$_" for 1..$in_lines;
-my $out_lines = $result->{"$baseoid.4.3.0"};
-$out_lines = 0 if !defined $out_lines || $out_lines !~ /^\d+$/;
+my $out_lines = get_result("$baseoid.4.3.0", qr/^\d+$/, 'number of output lines (UPS-MIB::upsOutputNumLines)');
 push @request, "$baseoid.4.4.1.2.$_", "$baseoid.4.4.1.3.$_", "$baseoid.4.4.1.4.$_", "$baseoid.4.4.1.5.$_" for 1..$out_lines;
-my $by_lines = $result->{"$baseoid.5.2.0"};
-$by_lines = 0 if !defined $by_lines || $by_lines !~ /^\d+$/;
+my $by_lines = get_result("$baseoid.5.2.0", qr/^\d+$/, 'number of bypass lines (UPS-MIB::upsBypassNumLines)');
 push @request, "$baseoid.5.3.1.2.$_", "$baseoid.5.3.1.3.$_", "$baseoid.5.3.1.4.$_" for 1..$by_lines;
-# FIXME limit number of requests for SNMP packet?
-my $alarms = $result->{"$baseoid.6.1.0"};
-$alarms = 0 if !defined $alarms || $alarms !~ /^\d+$/;
+my $alarms = get_result("$baseoid.6.1.0", qr/^\d+$/, 'number of alarms present (UPS-MIB::upsAlarmsPresent)');
 push @request, "$baseoid.6.2.1.2.$_", "$baseoid.6.2.1.3.$_" for 1..$alarms;
 if (@request) {
+  # FIXME limit number of requests for SNMP packet?
   my $subresult = $session->get_request(-varbindlist => \@request);
   $result->{$_} = $subresult->{$_} foreach @request;
 }
 
-# UPS title
+my $status = OK;
+my (@report_head, @reports_normal, @reports_critical, @reports_warning);
 push @report_head, $result->{"$baseoid.1.1.0"} if defined $result->{"$baseoid.1.1.0"};
 push @report_head, $result->{"$baseoid.1.2.0"} if defined $result->{"$baseoid.1.2.0"};
-push @report_head, 'unknown UPS' if @report_head == 0;
+push @report_head, 'unknown UPS' if !@report_head;
 
 # Battery
-my $bat_status = $result->{"$baseoid.2.1.0"};
-$plugin->nagios_exit(UNKNOWN, "missing battery status (UPS-MIB::upsBatteryStatus)\n") if !defined $bat_status;
-$plugin->nagios_exit(UNKNOWN, "unknown battery status `$bat_status'\n") if $bat_status !~ /^[1-4]$/;
-# FIXME test all used values in $result
+my $bat_status = get_result("$baseoid.2.1.0", qr/^[1-4]$/, 'battery status (UPS-MIB::upsBatteryStatus)');
 my @bat_statuses = qw(unknown normal low depleted);
-my $bat_secsonbat = $result->{"$baseoid.2.2.0"};
-my $bat_minsleft = $result->{"$baseoid.2.3.0"};
-my $bat_charge = $result->{"$baseoid.2.4.0"};
-my $bat_voltage = $result->{"$baseoid.2.5.0"};
-my $bat_current = $result->{"$baseoid.2.6.0"};
+my $bat_secsonbat = get_result("$baseoid.2.2.0", qr/^\d+$/, 'number of seconds on battery (UPS-MIB::upsSecondsOnBattery)');
+my $bat_minsleft = get_result("$baseoid.2.3.0", qr/^\d+$/, 'number of minutes remaining (UPS-MIB::upsEstimatedMinutesRemaining)');
+my $bat_charge = get_result("$baseoid.2.4.0", qr/^\d+$/, 'battery charge (UPS-MIB::upsEstimatedChargeRemaining)');
+my $bat_voltage = get_result("$baseoid.2.5.0", qr/^\d+$/, 'battery voltage (UPS-MIB::upsBatteryVoltage)');
+my $bat_current = get_result("$baseoid.2.6.0", qr/^\d+$/, 'battery current (UPS-MIB::upsBatteryCurrent)');
+my $bat_temp = get_result("$baseoid.2.7.0", qr/^\d+$/, 'battery temperature (UPS-MIB::upsBatteryTemperature)');
 add_perfdata('bat_secsonbat', $bat_secsonbat, 's');
 add_perfdata('bat_minsleft', $bat_minsleft, 'min');
 add_perfdata('bat_charge', $bat_charge, '%', 0, 100);
 add_perfdata('bat_voltage', $bat_voltage * 0.1, 'V');
 add_perfdata('bat_current', $bat_current * 0.1, 'A');
+add_perfdata('bat_temp', $bat_temp, 'degC');
 my $bat_text = 'battery '.$bat_statuses[$bat_status-1].' ('.$bat_charge.'%; '.$bat_minsleft.'min)';
 if ($bat_status != 2) {
   $status = CRITICAL;
-  push @reports_critical, $bat_text;  
+  push @reports_critical, $bat_text;
 } else {
   push @reports_normal, $bat_text;
 }
-my $bat_temp = $result->{"$baseoid.2.7.0"};
-add_perfdata('bat_temp', $bat_temp, 'degC');
 
 # Input
-my $in_bads = $result->{"$baseoid.3.1.0"};
+my $in_bads = get_result("$baseoid.3.1.0", qr/^\d+$/, 'number of times bad input (UPS-MIB::upsInputLineBads)');
 add_perfdata('in_bads', $in_bads, 'c');
 for (my $c = 1; $c <= $in_lines; $c++) {
-  my $in_freq = $result->{"$baseoid.3.3.1.2.$c"};
-  my $in_voltage = $result->{"$baseoid.3.3.1.3.$c"};
-  my $in_current = $result->{"$baseoid.3.3.1.4.$c"};
-  my $in_power = $result->{"$baseoid.3.3.1.5.$c"};
+  my $in_freq = get_result("$baseoid.3.3.1.2.$c", qr/^\d+$/, "input line $c frequency (UPS-MIB::upsInputFrequency.$c)");
+  my $in_voltage = get_result("$baseoid.3.3.1.3.$c", qr/^\d+$/, "input line $c voltage (UPS-MIB::upsInputVoltage.$c)");
+  my $in_current = get_result("$baseoid.3.3.1.4.$c", qr/^\d+$/, "input line $c current (UPS-MIB::upsInputCurrent.$c)");
+  my $in_power = get_result("$baseoid.3.3.1.5.$c", qr/^\d+$/, "input line $c power (UPS-MIB::upsInputTruePower.$c)");
   add_perfdata("in_freq$c", $in_freq * 0.1, 'hz');
   add_perfdata("in_voltage$c", $in_voltage * 0.1, 'V');
   add_perfdata("in_current$c", $in_current * 0.1, 'A');
@@ -254,39 +245,38 @@ for (my $c = 1; $c <= $in_lines; $c++) {
 }
 
 # Output
-my $out_freq = $result->{"$baseoid.4.2.0"}; # XXX check 0 or invalid value
+my $out_freq = get_result("$baseoid.4.2.0", qr/^\d+$/, 'output frequence (UPS-MIB::upsOutputFrequency)');
 add_perfdata('out_freq', $out_freq * 0.1, 'hz');
-my $out_source = $result->{"$baseoid.4.1.0"};
-$plugin->nagios_exit(UNKNOWN, "missing output source (UPS-MIB::upsOutputSource)\n") if !defined $out_source;
-$plugin->nagios_exit(UNKNOWN, "unknown output source `$out_source'\n") if $out_source !~ /^[1-7]$/;
+my $out_source = get_result("$baseoid.4.1.0", qr/^[1-7]$/, 'output source (UPS-MIB::upsOutputSource)');
 my @out_sources = qw(other none normal bypass battery booster reducer);
-my $out_maxload = max map { $result->{"$baseoid.4.4.1.5.$_"} } 1..$out_lines;
+my $out_maxload = 0;
+for (my $c = 1; $c <= $out_lines; $c++) {
+  my $out_voltage = get_result("$baseoid.4.4.1.2.$c", qr/^\d+$/, "output line $c voltage (UPS-MIB::upsOutputVoltage)");
+  my $out_current = get_result("$baseoid.4.4.1.3.$c", qr/^\d+$/, "output line $c current (UPS-MIB::upsOutputCurrent)");
+  my $out_power = get_result("$baseoid.4.4.1.4.$c", qr/^\d+$/, "output line $c power (UPS-MIB::upsOutputPower)");
+  my $out_load = get_result("$baseoid.4.4.1.5.$c", qr/^\d+$/, "output line $c load (UPS-MIB::upsOutputPercentLoad)");
+  $out_maxload = max($out_maxload, $out_load);
+  add_perfdata("out_voltage$c", $out_voltage * 0.1, 'V');
+  add_perfdata("out_current$c", $out_current * 0.1, 'A');
+  add_perfdata("out_power$c", $out_power, 'W');
+  add_perfdata("out_load$c", $out_load, '%', 0, 100);
+}
 my $out_text = 'output '.$out_sources[$out_source-1];
-$out_text .= " ($out_maxload% load)" if defined $out_maxload;
+$out_text .= " ($out_maxload% load)" if $out_lines > 0;
 if ($out_source != 3) {
   $status = CRITICAL;
   push @reports_critical, $out_text;
 } else {
   push @reports_normal, $out_text;
 }
-for (my $c = 1; $c <= $out_lines; $c++) {
-  my $out_voltage = $result->{"$baseoid.4.4.1.2.$c"};
-  my $out_current = $result->{"$baseoid.4.4.1.3.$c"};
-  my $out_power = $result->{"$baseoid.4.4.1.4.$c"};
-  my $out_load = $result->{"$baseoid.4.4.1.5.$c"};
-  add_perfdata("out_voltage$c", $out_voltage * 0.1, 'V');
-  add_perfdata("out_current$c", $out_current * 0.1, 'A');
-  add_perfdata("out_power$c", $out_power, 'W');
-  add_perfdata("out_load$c", $out_load, '%', 0, 100);
-}
 
 # Bypass
-my $by_freq = $result->{"$baseoid.5.1.0"}; # XXX check 0 or invalid value
+my $by_freq = get_result("$baseoid.5.1.0", qr/^\d+$/, 'bypass frequence (UPS-MIB::upsBypassFrequency)');
 add_perfdata('by_freq', $by_freq * 0.1, 'hz');
 for (my $c = 1; $c <= $by_lines; $c++) {
-  my $by_voltage = $result->{"$baseoid.5.3.1.2.$c"};
-  my $by_current = $result->{"$baseoid.5.3.1.3.$c"};
-  my $by_power = $result->{"$baseoid.5.3.1.4.$c"};
+  my $by_voltage = get_result("$baseoid.5.3.1.2.$c", qr/^\d+$/, "bypass line $c voltage (UPS-MIB::upsBypassVoltage.$c)");
+  my $by_current = get_result("$baseoid.5.3.1.3.$c", qr/^\d+$/, "bypass line $c current (UPS-MIB::upsBypassCurrent.$c)");
+  my $by_power = get_result("$baseoid.5.3.1.4.$c", qr/^\d+$/, "bypass line $c power (UPS-MIB::upsBypassPower.$c)");
   add_perfdata("by_voltage$c", $by_voltage * 0.1, 'V');
   add_perfdata("by_current$c", $by_current * 0.1, 'A');
   add_perfdata("by_power$c", $by_power, 'W');
@@ -295,14 +285,15 @@ for (my $c = 1; $c <= $by_lines; $c++) {
 # Alarms
 my $alarms_ignored = 0;
 my @alarm_texts;
+my $sysuptime = get_result($sysUpTime_oid, qr/^\d+$/, 'system uptime (RFC1213-MIB::sysUpTime)');
 for (my $c = 1; $c <= $alarms; $c++) {
-  my $alarm_oid = $result->{"$baseoid.6.2.1.1.$c"}; # XXX check value existance and /^(\d+)(\.\d+)*$/
+  my $alarm_oid = get_result("$baseoid.6.2.1.1.$c", qr/^\d+(\.\d+)*$/, "alarm $c id (UPS-MIB::upsAlarmId.$c)");
   my $alarm_name = $alarm_name{$alarm_oid} // $alarm_oid;
-  my $alarm_time = $result->{"$baseoid.6.2.1.3.$c"}; # XXX check value existance and /^\d+$/
+  my $alarm_time = get_result("$baseoid.6.2.1.3.$c", qr/^\d+$/, "alarm $c time (UPS-MIB::upsAlarmtime.$c)");
   if (exists $ignore_alarm{$alarm_oid} || exists $ignore_alarm{$alarm_name}) {
     $alarms_ignored++;
   } elsif ($alarms == 1 || $c == $alarms || $result->{"$baseoid.6.2.1.3.".($c-1)} != $alarm_time) {
-    push @alarm_texts, $alarm_name.' ('.format_duration($alarm_time - $result->{$sysUpTime_oid}).')';
+    push @alarm_texts, $alarm_name.' ('.format_duration($alarm_time - $sysuptime).')';
   } else {
     push @alarm_texts, $alarm_name;
   }
@@ -326,15 +317,15 @@ my %test_name = (
   "$baseoid.7.7.4" => 'QuickBatteryTest',
   "$baseoid.7.7.5" => 'DeepBatteryCalibration',
 );
-my $test_oid = $result->{"$baseoid.7.1.0"};
+my $test_oid = get_result("$baseoid.7.1.0", qr/^\d+(\.\d+)*$/, 'test object identifier (UPS-MIB::upsTestId)');
 my $test_name = $test_name{$test_oid} // $test_oid;
 #my @test_statuses = qw(donePass doneWarning doneError aborted inProgress noTestsInitiated);
-my $test_status = $result->{"$baseoid.7.3.0"}; # XXX check existence and format
-my $test_duration = $result->{"$baseoid.7.5.0"} - $result->{$sysUpTime_oid};
+my $test_status = get_result("$baseoid.7.3.0", qr/^[1-6]$/, 'test status (UPS-MIB::upsTestResultsSummary)');
+my $test_time = get_result("$baseoid.7.5.0", qr/^\d+$/, 'test start time (UPS-MIB::upsTestStartTime)');
 if ($test_status == 6 || $test_oid eq "$baseoid.7.7.1") { # No test have been run, no action
   push @reports_normal, 'no test';
 } elsif ($test_status == 5) { # Test is running
-  push @reports_normal, "test running: $test_name (".format_duration($test_duration).')';
+  push @reports_normal, "test running: $test_name (".format_duration($test_time-$sysuptime).')';
 } elsif ($test_status == 1) { # Test has run, and passed
   push @reports_normal, "test passed: $test_name";
 } elsif (!defined $opt{'ignore-test-results'}) {
@@ -388,4 +379,12 @@ sub format_duration {
   return int(($dur + 59999) / 60000).'min' if $dur < 360000;
   return int(($dur + 359999) / 360000).'h' if $dur < 8640000;;
   return int(($dur + 8639999) / 8640000).'d';
+}
+
+sub get_result {
+  my ($oid, $re, $field) = @_;
+  my $value = $result->{$oid};
+  $plugin->nagios_exit(UNKNOWN, "missing $field\n") if !defined $value;
+  $plugin->nagios_exit(UNKNOWN, "invalid $field: $value\n") if $value !~ $re;
+  return $value;
 }
