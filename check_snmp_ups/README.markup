@@ -1,0 +1,87 @@
+check_snmp_ups
+==============
+
+Introduction
+------------
+
+check_snmp_ups is a Nagios plugin that checks status of uninterruptible
+power supply (UPS) systems via SNMP, as defined in RFC 1628 (UPS-MIB).
+
+check_snmp_ups was designed to check and report as much data as possible. 
+It checks alarms, status of tests, output details such as output source, and
+battery status. Performance data is also generated for most of the fields
+in the MIB.
+
+check_snmp_ups is written in Perl.
+
+Author and Feedback
+-------------------
+
+check_snmp_ups is written by Oskar Liljeblad <oskar@osk.mine.nu>.
+
+This software is a work in progress and there are probably many ways it can
+still be improved. If you'd like to contribute patches, ideas, or bug
+reports, please send me an email!
+
+License
+-------
+
+check_snmp_ups is copyright (C) 2011 Oskar Liljeblad.
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+Download
+--------
+
+The latest code for check_snmp_ups can be downloaded from GitHub:
+
+ * <https://github.com/osklil/nagios-misc/zipball/master>
+
+The Git repository is hosted on GitHub:
+
+ * <https://github.com/osklil/nagios-misc>
+
+Requirements
+------------
+
+ * Perl 5.10.0 (or later).
+   Debian: perl
+
+ * Net::SNMP Perl module.
+   Debian: libnet-snmp-perl
+
+ * Nagios::Plugin Perl module.
+   Debian: libnagios-plugin-perl
+
+Usage
+-----
+
+Run `check_snmp_ups --help' for usage information. To get started, specify
+host address and community (if different than `public'):
+
+  check_snmp_ups -H ups.example.org -C mycommunity
+
+Future
+------
+
+Please see the TODO file.
+
+References
+----------
+
+ * RFC 1628 - UPS Management Information Base.
+   <http://tools.ietf.org/html/rfc1628>
+
+ * Nagios plug-in development guidelines.
+   <http://nagiosplug.sourceforge.net/developer-guidelines.html>

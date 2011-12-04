@@ -7,7 +7,9 @@ Centreon (<http://www.centreon.com>):
 
  * check_snmp_hr_lm - Various Host Resources and LAN Manager SNMP checks
 
- * check_snmp_if - Check status of interfaces using SNMP IF-MIB
+ * check_snmp_if - Check status of interfaces using SNMP (IF-MIB)
+
+ * check_snmp_ups - Check status of UPSes via SNMP (UPS-MIB)
 
  * check_tsm - Perform Tivoli Storage Manager server checks
 
