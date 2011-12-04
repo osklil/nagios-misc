@@ -199,8 +199,8 @@ Thresholds follow the usual Nagios format:
   50:95                  50 <= x <= 95
   \@50:95                 x < 50 or x > 95
 
-See <http://nagiosplug.sourceforge.net/developer-guidelines.html> for more
-information.
+See <http://nagiosplug.sourceforge.net/developer-guidelines.html> for
+further information.
 
 FILTER is a comma-separated list of match items in the following format:
   [+|-][name|descr|alias|index|type][:|=]VALUE
