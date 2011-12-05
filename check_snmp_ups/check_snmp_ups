@@ -27,6 +27,7 @@ use List::Util qw(max);
 use Net::SNMP;
 use Getopt::Long;
 use Nagios::Plugin;
+use Nagios::Plugin::Threshold;
 
 my $PROGRAM = 'check_snmp_ups';
 my $VERSION = '0.0+git';
@@ -37,28 +38,17 @@ my %opt = (
   'timeout' => 10,
   'verbose' => 0,
   'ignore-alarms' => '',
+  'warning' => '',
+  'critical' => '',
 );
 Getopt::Long::config('bundling');
 Getopt::Long::GetOptions(\%opt,
-  'host|H=s',
-  'timeout|t=i',
-  'community|C=s',
-  'snmp-version|V=s',
-  'auth-username=s',
-  'auth-password=s',
-  'priv-password=s',
-  'auth-protocol=s',
-  'priv-protocol=s',
-  'port=i',
-  'snmp-message-size=i',
-  'local-address=s',
-  'local-port=s',
-  'no-perfdata|n',
-  'ignore-alarms=s',
-  'ignore-test-results',
-  'verbose|v+',
-  'help',
-  'version'
+  'host|H=s', 'timeout|t=i', 'community|C=s', 'snmp-version|V=s',
+  'auth-username=s', 'auth-password=s', 'priv-password=s',
+  'auth-protocol=s', 'priv-protocol=s', 'port=i', 'snmp-message-size=i',
+  'local-address=s', 'local-port=s', 'no-perfdata|n', 'ignore-alarms=s',
+  'ignore-test-results', 'verbose|v+', 'warning|w=s', 'critical|c=s',
+  'help', 'version'
 ) || exit UNKNOWN;
 
 if (defined $opt{'help'}) {
@@ -67,27 +57,32 @@ Usage: $0 -H ADDRESS [OPTION]...
 Check status of uninterruptible power supply (UPS) systems via SNMP (UPS-MIB).
 
 General options:
-  -H, --host=ADDRESS             address or name of host to check
-  -n, --no-perfdata              do not print any performance data
-  -v, --verbose                  explain what is being done (incremental)
-      --ignore-alarms=ALARM,...  ignore alarms by name or number
-      --ignore-test-results      do not warn about test results
-      --help                     display this help and exit
-      --version                  output version information and exit
+  -H, --host=ADDRESS               address or name of host to check
+  -n, --no-perfdata                do not print any performance data
+  -v, --verbose                    explain what is being done
+      --ignore-alarms=ALARM[,...]  ignore alarms by name or number
+      --ignore-test-results        do not warn about test results
+  -w, --warning=LOAD[,...]         warning threshold for output load
+  -c, --critical=LOAD[,...]        critical threshold for output load
+      --help                       display this help and exit
+      --version                    output version information and exit
 
 SNMP options:
-  -V, --snmp-version=VERSION     SNMP version (1, 2c, 3)
-  -t, --timeout=SECONDS          total time for individual SNMP requests
-  -C, --community=NAME           SNMP community
-      --port=NUMBER              SNMP port (if other than 161)
-      --auth-username=USER       Authentication username (SNMPv3)
-      --auth-password=PASSWORD   Authentication password (SNMPv3)
-      --auth-protocol=md5|sha    Authentication protocol (SNMPv3)
-      --priv-password=PASSWORD   Encryption password (SNMPv3)
-      --priv-protocol=des|aes    Encryption protocol (SNMPv3)
-      --snmp-message-size=BYTES  Max size of SNMP request packets
-      --local-address=ADDRESS    Local address for outgoing packets
-      --local-port=NUMBER        Local port for outgoing packets
+  -V, --snmp-version=VERSION       SNMP version (1, 2c, 3), default is 1
+  -t, --timeout=SECONDS            max time for individual SNMP requests
+      --port=NUMBER                SNMP port (if other than 161)
+      --local-address=ADDRESS      Local address for outgoing packets
+      --local-port=NUMBER          Local port for outgoing packets
+  -C, --community=NAME             SNMP community
+      --auth-username=USER         Authentication username (SNMPv3)
+      --auth-password=PASSWORD     Authentication password (SNMPv3)
+      --auth-protocol=md5|sha      Authentication protocol (SNMPv3)
+      --priv-password=PASSWORD     Encryption password (SNMPv3)
+      --priv-protocol=des|aes      Encryption protocol (SNMPv3)
+      --snmp-message-size=BYTES    Max size of SNMP request packets
+
+If multiple values are specified for --warning/--critical, then the
+values match individual output lines rather than maximal output.
 
 Alarms (for --ignore-alarms) can be specified by name, number or
 full OID:
@@ -114,11 +109,8 @@ if (defined $opt{'version'}) {
   exit;
 }
 
-$plugin->nagios_exit(UNKNOWN, "missing --host/-H parameter\n") if !defined $opt{'host'};
-$plugin->nagios_exit(UNKNOWN, "surplus operand\n") if @ARGV;
-
 my $baseoid = '1.3.6.1.2.1.33.1'; # upsObjects in upsMIB (UPS-MIB; RFC 1628)
-my $sysUpTime_oid = '1.3.6.1.2.1.1.3.0'; # sysUpTime in system in mib-2 (SNMPv2-MIB; RFC 1213)
+my $sysUpTime_oid = '1.3.6.1.2.1.1.3.0'; # sysUpTime in system in mib-2 (RFC1213-MIB; RFC 1213)
 
 my %alarm_name = (
   "$baseoid.6.3.1" => 'BatteryBad',
@@ -160,7 +152,22 @@ foreach my $alarm (split(/,/, $opt{'ignore-alarms'})) {
   }
 }
 
-my $retries = 1; # default number of SNMP retries
+$plugin->nagios_exit(UNKNOWN, "missing --host/-H parameter\n") if !defined $opt{'host'};
+$plugin->nagios_exit(UNKNOWN, "surplus operand\n") if @ARGV;
+
+my @load_thresholds;
+my @load_warning = split(/,/, $opt{'warning'});
+my @load_critical = split(/,/, $opt{'critical'});
+$plugin->nagios_exit(UNKNOWN, "must specify equal number of warning and critical thresholds\n") if @load_warning != @load_critical;
+if (@load_warning != 0) {
+  for (my $c = 0; $c < @load_warning; $c++) {
+    $plugin->nagios_exit(UNKNOWN, "invalid warning threshold `$load_warning[$c]'\n") if $load_warning[$c] !~ /^(\d+|\d+:|~:\d+|\d+:\d+|@\d+:\d+)$/;
+    $plugin->nagios_exit(UNKNOWN, "invalid critical threshold `$load_critical[$c]'\n") if $load_warning[$c] !~ /^(\d+|\d+:|~:\d+|\d+:\d+|@\d+:\d+)$/;
+    push @load_thresholds, Nagios::Plugin::Threshold->set_thresholds(warning => $load_warning[$c], critical => $load_critical[$c]);
+  }
+}
+
+my $retries = 1; # default number of SNMP retries in Net::SNMP
 my @session_opts = (
   -hostname => $opt{'host'},
   -version => $opt{'snmp-version'},
@@ -195,17 +202,22 @@ my $by_lines = get_result("$baseoid.5.2.0", qr/^\d+$/, 'number of bypass lines (
 push @request, "$baseoid.5.3.1.2.$_", "$baseoid.5.3.1.3.$_", "$baseoid.5.3.1.4.$_" for 1..$by_lines;
 my $alarms = get_result("$baseoid.6.1.0", qr/^\d+$/, 'number of alarms present (UPS-MIB::upsAlarmsPresent)');
 push @request, "$baseoid.6.2.1.2.$_", "$baseoid.6.2.1.3.$_" for 1..$alarms;
-if (@request) {
-  # FIXME limit number of requests for SNMP packet?
-  my $subresult = $session->get_request(-varbindlist => \@request);
-  $result->{$_} = $subresult->{$_} foreach @request;
+while (@request) {
+  # Don't do more requests than 40 at a time. That should keep our SNMP
+  # packets below 1000 byte in size, according to my tests anyway...
+  my @subrequest = splice @request, 0, 40;
+  my $subresult = $session->get_request(-varbindlist => \@subrequest);
+  $result->{$_} = $subresult->{$_} foreach @subrequest;
 }
+
+$plugin->nagios_exit(UNKNOWN, "number of lines in thresholds (", scalar @load_thresholds, ") does not match actual number ($out_lines)\n")
+    if @load_thresholds > 1 && $out_lines != @load_thresholds;
 
 my $status = OK;
 my (@report_head, @reports_normal, @reports_critical, @reports_warning);
 push @report_head, $result->{"$baseoid.1.1.0"} if defined $result->{"$baseoid.1.1.0"};
 push @report_head, $result->{"$baseoid.1.2.0"} if defined $result->{"$baseoid.1.2.0"};
-push @report_head, 'unknown UPS' if !@report_head;
+push @report_head, 'Unknown UPS' if !@report_head;
 
 # Battery
 my $bat_status = get_result("$baseoid.2.1.0", qr/^[1-4]$/, 'battery status (UPS-MIB::upsBatteryStatus)');
@@ -260,6 +272,20 @@ for (my $c = 1; $c <= $out_lines; $c++) {
   add_perfdata("out_current$c", $out_current * 0.1, 'A');
   add_perfdata("out_power$c", $out_power, 'W');
   add_perfdata("out_load$c", $out_load, '%', 0, 100);
+  if (@load_thresholds == 0) {
+    add_perfdata("out_load$c", $out_load, '%', 0, 100);
+  } else {
+    my $threshold = $load_thresholds[@load_thresholds == 1 ? 0 : $c-1];
+    my $load_status = $threshold->get_status($out_load);
+    if ($load_status == CRITICAL) {
+      $status = CRITICAL;
+      push @reports_critical, "output line $c $out_load% load";
+    } elsif ($load_status == WARNING) {
+      $status = WARNING if $status != CRITICAL;
+      push @reports_warning, "output line $c $out_load% load";
+    }
+    add_perfdata("out_load$c", $out_load, '%', 0, 100, $threshold);
+  }
 }
 my $out_text = 'output '.$out_sources[$out_source-1];
 $out_text .= " ($out_maxload% load)" if $out_lines > 0;
@@ -301,7 +327,7 @@ for (my $c = 1; $c <= $alarms; $c++) {
 add_perfdata('alarms', $alarms);
 if ($alarms > $alarms_ignored) {
   $status = CRITICAL;
-  push @reports_critical, 'Alarms: '.join(', ', @alarm_texts);
+  push @reports_critical, 'alarms: '.join(', ', @alarm_texts);
   push @reports_critical, $alarms.' ignored' if $alarms_ignored > 0;
 } elsif ($alarms_ignored > 0) {
   push @reports_normal, $alarms.' '.noun($alarms, 'alarm', 'alarms').' ignored';

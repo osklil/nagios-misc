@@ -72,6 +72,42 @@ host address and community (if different than `public'):
 
   check_snmp_ups -H ups.example.org -C mycommunity
 
+Known Issues
+------------
+
+Some UPSes may report zero (0) for some values they don't support, e.g. 
+upsInputCurrent. Unfortunately check_snmp_ups has no good way of testing
+this, so the values are reported as they are in the performance data.
+
+Implementation Notes
+--------------------
+
+List of unchecked RFC 1628 UPS-MIB fields:
+
+ * upsIdentUPSSoftwareVersion              to implement in verbose mode
+ * upsIdentAgentSoftwareVersion            to implement in verbose mode
+ * upsIdentName                            to implement in verbose mode
+ * upsIdentAttachedDevices                 to implement in verbose mode
+ * upsAlarmDescr                           to implement in verbose mode
+ * upsTestSpinLock                         not interesting at the moment
+ * upsTestResultsDetail                    to implement in verbose mode
+ * upsTestElapsedTime                      to implement in verbose mode
+ * upsShutdownType                         not interesting at the moment
+ * upsShutdownAfterDelay                   not interesting at the moment
+ * upsStartupAfterDelay                    not interesting at the moment
+ * upsRebootWithDuration                   not interesting at the moment
+ * upsAutoRestart                          not interesting at the moment
+ * upsConfigInputVoltage                   not interesting at the moment
+ * upsConfigHighVoltageTransferPoint       not interesting at the moment
+ * upsConfigInputFreq                      not interesting at the moment
+ * upsConfigOutputVoltage                  not interesting at the moment
+ * upsConfigOutputFreq                     not interesting at the moment
+ * upsConfigOutputVA                       not interesting at the moment
+ * upsConfigOutputPower                    not interesting at the moment
+ * upsConfigLowBattTime                    not interesting at the moment
+ * upsConfigAudibleStatus                  not interesting at the moment
+ * upsConfigLowVoltageTransferPoint        not interesting at the moment
+
 Future
 ------
 
