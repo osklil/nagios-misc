@@ -130,18 +130,18 @@ General options:
       --version                output version information and exit
 
 SNMP options:
-  -V, --snmp-version=VERSION     SNMP version (1, 2c, 3)
-  -t, --timeout=SECONDS          total time for individual SNMP requests
-  -C, --community=NAME           SNMP community
+  -V, --snmp-version=VERSION     SNMP version (2c, 3), default is 2c
+  -t, --timeout=SECONDS          max time for individual SNMP requests
       --port=NUMBER              SNMP port (if other than 161)
+      --local-address=ADDRESS    Local address for outgoing packets
+      --local-port=NUMBER        Local port for outgoing packets
+  -C, --community=NAME           SNMP community
       --auth-username=USER       Authentication username (SNMPv3)
       --auth-password=PASSWORD   Authentication password (SNMPv3)
       --auth-protocol=md5|sha    Authentication protocol (SNMPv3)
       --priv-password=PASSWORD   Encryption password (SNMPv3)
       --priv-protocol=des|aes    Encryption protocol (SNMPv3)
       --snmp-message-size=BYTES  Max size of SNMP request packets
-      --local-address=ADDRESS    Local address for outgoing packets
-      --local-port=NUMBER        Local port for outgoing packets
 
 Threshold options:
   -U, --utilization-thresholds=THLD    bandwidth utilization (in percent)
@@ -256,7 +256,7 @@ my ($in_discard_thresh, $out_discard_thresh) = parse_in_out_thresholds_specifica
 my $in_unknown_thresh = parse_thresholds_specification($opt{'unknown-thresholds'});
 $plugin->nagios_exit(UNKNOWN, "surplus operand\n") if @ARGV;
 
-my $retries = 1; # default number of SNMP retries
+my $retries = 1; # default number of SNMP retries in Net::SNMP
 my @session_opts = (
   -hostname => $opt{'host'},
   -version => $opt{'snmp-version'},
