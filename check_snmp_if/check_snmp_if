@@ -50,7 +50,7 @@ my %opt = (
   'discard-thresholds' => '250,500,1000,2000',
   'unknown-thresholds' => '125,250',
   'label' => 'name',
-  'type-filter' => '6',
+  'filter-type' => '6',
   'timeout' => 10,
   'verbose' => 0,
 );
@@ -74,7 +74,7 @@ Getopt::Long::GetOptions(\%opt,
   'stats-file=s',
   'label=s',
   'filter|F=s',
-  'type-filter|T=s',
+  'filter-type|T=s',
   'status-filter|S=s',
   'promiscuous-filter=s',
   'utilization-thresholds|U=s',
@@ -155,6 +155,7 @@ Threshold options:
 
 Filter options:
   -F, --filter=FILTER                  all checks
+  -T, --filter-type=TYPEFILTER         all checks, interface type
   -S, --status-filter=FILTER           operational status checks
       --promiscuous-filter=FILTER      promiscuous mode
       --utilization-filter=FILTER      bandwidth utilization
@@ -180,8 +181,8 @@ Filter options:
       --out-discard-filter=FILTER      discard packet output rate
       --unknown-filter=FILTER          unknown protocol packet input rate
 
-All options except --unknown-thresholds expect a comma-separated set of
-thresholds:
+All threshold options except --unknown-thresholds expect a comma-separated
+set of thresholds:
   input-warning,input-critical,output-warning,output-critical
   warning,critical
   critical
@@ -221,6 +222,10 @@ Note that all match modifiers are carried on to the next item:
   -name=Gi3/1,Gi3/2      exclude Gi3/1 and Gi3/2
   -alias:down            exclude all interfaces with the word `down'
                          in their user descriptions
+
+The --filter-type option can be used to override the default type filter,
+which is `6' (for ethernet interfaces). Specify --filter-type=all to allow
+all interface types.
 
 Report $PROGRAM bugs to <oskar\@osk.mine.nu>.
 __END__
@@ -353,7 +358,7 @@ if (@indexes) {
   foreach my $index (sort { $a <=> $b } keys %newstats) {
     my $s = $newstats{$index};
     next if !filter_interface($opt{'filter'}, $s);
-    next if !filter_interface($opt{'type-filter'}, $s, 'type');
+    next if !filter_interface($opt{'filter-type'}, $s, 'type');
     my $label = get_interface_label($opt{'label'}, $s) // $index;
     $checkcount++;
 
