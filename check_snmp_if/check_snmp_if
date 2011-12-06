@@ -214,9 +214,13 @@ match (default is name). The next character specifies match type:
   =                      exact match, case sensitive
   :                      substring match, case insensitive
 
+If exact match mode is used, VALUE may optionally specify a range:
+`FIRST..LAST'. Ranges are closed intervals.
+
 Additionally, there are some special filters:
   +all, all              include everything
   -all                   exclude everything
+
 
 Note that all match modifiers are carried on to the next item:
   -name=Gi3/1,Gi3/2      exclude Gi3/1 and Gi3/2
@@ -718,7 +722,6 @@ sub get_interface_status {
 
 sub filter_interface {
   my ($filterspec, $s, $forcefield) = @_;
-  # FIXME: implement interface range matching, e.g. Gi0/31-Gi0/32
   my $include = 1;
   if (defined $filterspec) {
     return (!defined $1 || $1 eq '+') if $filterspec =~ /^([-+])?all$/;
@@ -743,8 +746,13 @@ sub filter_interface {
       $value = $s->{'x18'} if $field eq 'alias';
       $value = $s->{'idx'} if $field eq 'index';
       if (defined $value) {
-        $include = $inclexcl if $mode eq '=' && $value eq $filtervalue;
-        $include = $inclexcl if $mode eq ':' && index(lc $value, lc $filtervalue) >= 0;
+        if ($filtervalue =~ /^(.*)\.\.(.*)$/ && $mode eq '=') {
+          my ($firstvalue, $lastvalue) = ($1, $2);
+          $include = $inclexcl if generic_cmp($firstvalue, $value) <= 0 && generic_cmp($value, $lastvalue) <= 0;
+        } else {
+          $include = $inclexcl if $mode eq '=' && $value eq $filtervalue;
+          $include = $inclexcl if $mode eq ':' && index(lc $value, lc $filtervalue) >= 0;
+        }
       }
     }
   }
@@ -816,4 +824,20 @@ sub add_perfdata {
       $plugin->add_perfdata(label => $label, value => $value, uom => $unit, min => 0, max => $max);
     }
   }
+}
+
+sub generic_cmp {
+  my ($a,$b) = @_;
+  my @a = split(/(\d+)/, $a);
+  my @b = split(/(\d+)/, $b);
+  for (my $c = 0; $c < @a && $c < @b; $c++) {
+    if ($a[$c] =~ /^\d+$/ && $b[$c] =~ /^\d+$/) {
+      my $v = $a[$c] <=> $b[$c];
+      return $v if $v != 0;
+    } else {
+      my $v = $a[$c] cmp $b[$c];
+      return $v if $v != 0;
+    }
+  }
+  return @a <=> @b;
 }
