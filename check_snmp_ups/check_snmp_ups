@@ -35,7 +35,7 @@ my $VERSION = '0.0+git';
 my $plugin = Nagios::Plugin->new(shortname => $PROGRAM);
 my %opt = (
   'snmp-version' => 1,
-  'timeout' => 10,
+  'timeout' => 30,
   'verbose' => 0,
   'ignore-alarms' => '',
   'warning' => '',
@@ -81,7 +81,7 @@ SNMP options:
       --priv-protocol=des|aes      Encryption protocol (SNMPv3)
       --snmp-message-size=BYTES    Max size of SNMP request packets
 
-If multiple values are specified for --warning/--critical, then the
+If multiple values are specified for --warning and --critical, the
 values match individual output lines rather than maximal output.
 
 Alarms (for --ignore-alarms) can be specified by name, number or
