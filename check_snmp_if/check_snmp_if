@@ -133,15 +133,15 @@ SNMP options:
   -V, --snmp-version=VERSION     SNMP version (2c, 3), default is 2c
   -t, --timeout=SECONDS          max time for individual SNMP requests
       --port=NUMBER              SNMP port (if other than 161)
-      --local-address=ADDRESS    Local address for outgoing packets
-      --local-port=NUMBER        Local port for outgoing packets
+      --local-address=ADDRESS    local address for outgoing packets
+      --local-port=NUMBER        local port for outgoing packets
   -C, --community=NAME           SNMP community
-      --auth-username=USER       Authentication username (SNMPv3)
-      --auth-password=PASSWORD   Authentication password (SNMPv3)
-      --auth-protocol=md5|sha    Authentication protocol (SNMPv3)
-      --priv-password=PASSWORD   Encryption password (SNMPv3)
-      --priv-protocol=des|aes    Encryption protocol (SNMPv3)
-      --snmp-message-size=BYTES  Max size of SNMP request packets
+      --auth-username=USER       authentication username (SNMPv3)
+      --auth-password=PASSWORD   authentication password (SNMPv3)
+      --auth-protocol=md5|sha    authentication protocol (SNMPv3)
+      --priv-password=PASSWORD   encryption password (SNMPv3)
+      --priv-protocol=des|aes    encryption protocol (SNMPv3)
+      --snmp-message-size=BYTES  max size of SNMP request packets
 
 Threshold options:
   -U, --utilization-thresholds=THLD    bandwidth utilization (in percent)
