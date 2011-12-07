@@ -1,5 +1,7 @@
 201?-??-??: Version 0.2 released.
 Added SNMPv3 support (untested).
+Added --filter-type option (default is `6' for ethernet interfaces).
+Added support for filtering ranges (use `first..last').
 
 2011-11-23: Version 0.1 released.
 First public release.
