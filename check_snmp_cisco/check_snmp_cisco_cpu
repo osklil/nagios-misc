@@ -152,7 +152,6 @@ my $result = $session->get_table($baseoid);
 my $processors = 1;
 $processors++ while exists $result->{"$baseoid.3.$processors"};
 $processors--;
-
 $plugin->nagios_exit(CRITICAL, "no processor statistics found\n") if $processors == 0;
 
 my @reports;
@@ -174,6 +173,7 @@ add_perfdata('cpu_5min', $value3, '%', 0, 100, @thresholds >= 1 ? $thresholds[-1
 
 push @reports, [ OK, $processors.' '.noun($processors, 'processor', 'processors') ];
 push @reports, [ OK, format_aggregate($opt{'aggregate'})." aggregation" ] if $processors > 1;
+add_perfdata('processors', $processors, '', 0);
 
 my $status = max(OK, $status1, $status2, $status3);
 my $report = "CPU utilization ";
