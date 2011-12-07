@@ -54,7 +54,7 @@ Getopt::Long::GetOptions(\%opt,
 
 if (defined $opt{'help'}) {
   print <<"__END__";
-Usage: $0 -H ADDRESS [OPTION]...
+Usage: $PROGRAM -H ADDRESS [OPTION]...
 Check CPU utilization or load on Cisco devices via SNMP (CISCO-PROCESS-MIB).
 
 General options:
@@ -90,11 +90,14 @@ each part of the threshold follows the usual Nagios format:
   50:95                  50 <= x <= 95
   \@50:95                 x < 50 or x > 95
 
-Examples:
+Threshold examples:
   Specification          Okay if
   70,80,90               5sec <= 70%, 1min <= 80%, and 5min <= 90%
   75,95                  1min <= 75%, and 5min <= 95%
   87                     5min <= 87%
+
+Examples:
+  $PROGRAM -H myhost -C mycommunity -w 70,80,90 -c 85,90,95
 
 Report $PROGRAM bugs to <oskar\@osk.mine.nu>.
 __END__
