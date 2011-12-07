@@ -76,6 +76,9 @@ Please see the TODO file.
 References
 ----------
 
+ * Cisco Technote 15215: "How to Collect CPU Utilization on Cisco IOS Devices Using SNMP".
+   <http://www.cisco.com/en/US/tech/tk648/tk362/technologies_tech_note09186a0080094a94.shtml>
+
  * CISCO-PROCESS-MIB: "MIB for CPU and process statistics".
    <ftp://ftp.cisco.com/pub/mibs/v2/CISCO-PROCESS-MIB.my>
 
