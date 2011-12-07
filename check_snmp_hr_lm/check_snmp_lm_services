@@ -57,7 +57,7 @@ Getopt::Long::GetOptions(\%opt,
 
 if (defined $opt{'help'}) {
   print <<"__END__";
-Usage: $0 -H ADDRESS [OPTION]... SERVICE...
+Usage: $PROGRAM -H ADDRESS [OPTION]... SERVICE...
 Check running services using LanMgr-Mib-II-MIB SNMP requests, supported on
 Microsoft Windows systems with the SNMP Service. Exit with critical status
 if any service specified on the command line is not running.

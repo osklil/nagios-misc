@@ -54,7 +54,7 @@ Getopt::Long::GetOptions(\%opt,
 
 if (defined $opt{'help'}) {
   print <<"__END__";
-Usage: $0 -H ADDRESS [OPTION]... PROCESS...
+Usage: $PROGRAM -H ADDRESS [OPTION]... PROCESS...
 Check running processes using HOST-RESOURCES-V2-MIB SNMP requests. Exit
 with critical status if any process specified on the command line is not
 running.

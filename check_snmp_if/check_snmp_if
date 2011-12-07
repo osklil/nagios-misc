@@ -115,7 +115,7 @@ Getopt::Long::GetOptions(\%opt,
 
 if (defined $opt{'help'}) {
   print <<"__END__";
-Usage: $0 -H ADDRESS [OPTION]...
+Usage: $PROGRAM -H ADDRESS [OPTION]...
 Check interfaces, including statistics, via SNMP (IF-MIB).
 
 General options:

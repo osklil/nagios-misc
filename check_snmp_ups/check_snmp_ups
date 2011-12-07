@@ -53,7 +53,7 @@ Getopt::Long::GetOptions(\%opt,
 
 if (defined $opt{'help'}) {
   print <<"__END__";
-Usage: $0 -H ADDRESS [OPTION]...
+Usage: $PROGRAM -H ADDRESS [OPTION]...
 Check status of uninterruptible power supply (UPS) systems via SNMP (UPS-MIB).
 
 General options:
