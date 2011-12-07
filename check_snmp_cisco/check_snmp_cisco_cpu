@@ -157,17 +157,17 @@ $plugin->nagios_exit(CRITICAL, "no processor statistics found\n") if $processors
 
 my @reports;
 
-my $value1 = get_aggregated_value("$baseoid.3", $opt{'aggregate'}); # 5sec
+my $value1 = get_aggregated_value("$baseoid.6", "$baseoid.3", $opt{'aggregate'}); # 5sec
 my $status1 = @thresholds >= 3 ? $thresholds[-3]->get_status($value1) : OK;
 push @reports, [ $status1, "5sec $value1\%" ];
 add_perfdata('cpu_5sec', $value1, '%', 0, 100, @thresholds >= 3 ? $thresholds[-3] : undef);
 
-my $value2 = get_aggregated_value("$baseoid.4", $opt{'aggregate'}); # 1min
+my $value2 = get_aggregated_value("$baseoid.7", "$baseoid.4", $opt{'aggregate'}); # 1min
 my $status2 = @thresholds >= 2 ? $thresholds[-2]->get_status($value2) : OK;
 push @reports, [ $status2, "1min $value2\%" ];
 add_perfdata('cpu_1min', $value2, '%', 0, 100, @thresholds >= 2 ? $thresholds[-2] : undef);
 
-my $value3 = get_aggregated_value("$baseoid.5", $opt{'aggregate'}); # 5min
+my $value3 = get_aggregated_value("$baseoid.8", "$baseoid.5", $opt{'aggregate'}); # 5min
 my $status3 = @thresholds >= 1 ? $thresholds[-1]->get_status($value3) : OK;
 push @reports, [ $status3, "5min $value3\%" ];
 add_perfdata('cpu_5min', $value3, '%', 0, 100, @thresholds >= 1 ? $thresholds[-1] : undef);
@@ -215,8 +215,9 @@ sub add_perfdata {
 #}
 
 sub get_aggregated_value {
-  my ($oid, $mode) = @_;
-  my @values = map { $result->{"$oid.$_"} } 1..$processors;
+  my ($oid_new, $oid_old, $mode) = @_;
+  my @values = map { $result->{"$oid_new.$_"} } 1..$processors;
+  @values = map { $result->{"$oid_old.$_"} } 1..$processors if @values != $processors;
   return (sum @values)/@values if $mode eq 'avg' || $mode eq 'average';
   return max @values if $mode eq 'max' || $mode eq 'maximum';
   return min @values if $mode eq 'min' || $mode eq 'minimum';
