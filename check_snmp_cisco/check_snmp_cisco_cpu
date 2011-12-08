@@ -220,7 +220,7 @@ sub add_perfdata {
 sub get_aggregated_value {
   my ($oid_new, $oid_old, $mode) = @_;
   my @values = map { $result->{"$oid_new.$_"} } 1..$processors;
-  @values = map { $result->{"$oid_old.$_"} } 1..$processors if @values != $processors;
+  @values = map { $result->{"$oid_old.$_"} } 1..$processors if grep(defined, @values) != $processors;
   return int((sum @values)/@values + 0.5) if $mode eq 'avg' || $mode eq 'average';
   return max @values if $mode eq 'max' || $mode eq 'maximum';
   return min @values if $mode eq 'min' || $mode eq 'minimum';
