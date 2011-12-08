@@ -392,10 +392,10 @@ if (@indexes) {
         }
         my $outbytes = get_interface_counter_difference($label, $s, $os, 'output octet', '16', 'x10');
         if (defined $outbytes) {
-          my $oututil = int($outbytes / $elapsed / $bitspeed * 100);
-          my $outprct = min(100, int(($outbytes/$elapsed*100 + $bitspeed - 1)/$bitspeed));
+          my $oututil = int($outbytes / $elapsed / $bitspeed * 8 * 100);
+          my $outprct = min(100, int(($outbytes/$elapsed*100 + ($bitspeed/8) - 1)/($bitspeed/8)));
           my $f = filter_interface($opt{'utilization-filter'}, $s) && filter_interface($opt{'out-utilization-filter'}, $s);
-          add_report($interface_report, format_integer('outData=%hBB/s(%p%%)', int($outbytes/$elapsed), $bitspeed), try_threshold($out_util_thresh, $oututil), $f);
+          add_report($interface_report, format_integer('outData=%hBB/s(%p%%)', int($outbytes*8/$elapsed), $bitspeed), try_threshold($out_util_thresh, $oututil), $f);
           add_perfdata("$label outData%", $outprct, 100, '%', $out_util_thresh);
         }
       }
