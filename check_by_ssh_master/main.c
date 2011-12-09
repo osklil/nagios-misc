@@ -185,6 +185,7 @@ run_ssh_command(bool quiet, char *command, ...)
     va_start(args, command);
     while ((ssh_argv[ssh_argc++] = va_arg(args, char *)) != NULL);
     va_end(args);
+    ssh_argv[ssh_argc] = NULL;
 
     return run_ssh_command_v(quiet, ssh_argv);
 }
