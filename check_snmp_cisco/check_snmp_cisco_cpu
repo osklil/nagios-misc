@@ -1,6 +1,6 @@
 #!/usr/bin/perl -w
 #
-# check_snmp_cisco_cpu - Check CPU utilization or load on Cisco devices
+# check_snmp_cisco_cpu - Check CPU utilization on Cisco devices
 #
 # Copyright (C) 2011 Oskar Liljeblad
 #
@@ -40,13 +40,14 @@ my %opt = (
   'warning' => '',
   'critical' => '',
   'aggregate' => 'avg',	
+  'perfdata' => 'aggregate',
 );
 Getopt::Long::config('bundling');
 Getopt::Long::GetOptions(\%opt,
   'host|H=s', 'timeout|t=i', 'community|C=s', 'snmp-version|V=s',
   'auth-username=s', 'auth-password=s', 'priv-password=s',
   'auth-protocol=s', 'priv-protocol=s', 'port=i', 'snmp-message-size=i',
-  'local-address=s', 'local-port=s', 'no-perfdata|n',
+  'local-address=s', 'local-port=s', 'no-perfdata|n', 'perfdata|p=s',
   'verbose|v+', 'warning|w=s', 'critical|c=s',
   'aggregate=s',
   'help', 'version'
@@ -55,15 +56,16 @@ Getopt::Long::GetOptions(\%opt,
 if (defined $opt{'help'}) {
   print <<"__END__";
 Usage: $PROGRAM -H ADDRESS [OPTION]...
-Check CPU utilization or load on Cisco devices via SNMP (CISCO-PROCESS-MIB).
+Check CPU utilization on Cisco devices via SNMP (CISCO-PROCESS-MIB).
 
 General options:
   -H, --host=ADDRESS               address or name of host to check
-  -n, --no-perfdata                do not print any performance data
   -v, --verbose                    explain what is being done
   -w, --warning=THRESHOLDS         warning threshold for utilization
   -c, --critical=THRESHOLDS        critical threshold for utilization
       --aggregate=min|max|avg|med  aggregation function for multiple CPUs
+  -n, --no-perfdata                do not print any performance data
+  -p, --perfdata=PERFITEMS         generate different performance data
       --help                       display this help and exit
       --version                    output version information and exit
 
@@ -96,6 +98,11 @@ Threshold examples:
   75,95                  1min <= 75%, and 5min <= 95%
   87                     5min <= 87%
 
+By default, performance data is generated for aggregated utilization
+values (--perfdata=aggregate).  You can instead generate performance data
+for individual values using --perfdata=individual. If you want both, you
+can combine them with a comma.
+
 Examples:
   $PROGRAM -H myhost -C mycommunity -w 70,80,90 -c 85,90,95
 
@@ -116,6 +123,12 @@ if (defined $opt{'version'}) {
 $plugin->nagios_exit(UNKNOWN, "missing --host/-H parameter\n") if !defined $opt{'host'};
 $plugin->nagios_exit(UNKNOWN, "invalid value for --aggregate - `$opt{'aggregate'}\n") if $opt{'aggregate'} !~ /^(avg|average|max|maximum|min|minimum|med|median)$/;
 $plugin->nagios_exit(UNKNOWN, "surplus operand\n") if @ARGV;
+
+my %perfdata;
+foreach my $item (split(/,/, $opt{'perfdata'})) {
+  $plugin->nagios_exit(UNKNOWN, "invalid value for --perfdata - `$item'\n") if $item !~ /^(aggregate|individual)$/;
+  $perfdata{$item} = 1;
+}
 
 my @thresholds;
 my @warning_thresholds = split(/,/, $opt{'warning'});
@@ -159,24 +172,36 @@ $plugin->nagios_exit(CRITICAL, "no processor statistics found\n") if $processors
 
 my @reports;
 
-my $value1 = get_aggregated_value("$baseoid.6", "$baseoid.3", $opt{'aggregate'}); # 5sec
+my @values1 = get_values("$baseoid.6", "$baseoid.3");
+my $value1 = calculate_aggregate($opt{'aggregate'}, @values1);
 my $status1 = @thresholds >= 3 ? $thresholds[-3]->get_status($value1) : OK;
 push @reports, [ $status1, "5sec $value1\%" ];
-add_perfdata('cpu_5sec', $value1, '%', 0, 100, @thresholds >= 3 ? $thresholds[-3] : undef);
+add_perfdata('cpu_5sec', $value1, '%', 0, 100, @thresholds >= 3 ? $thresholds[-3] : undef) if $perfdata{'aggregate'};
+if ($perfdata{'individual'}) {
+  add_perfdata('cpu'.$_.'_5sec', $values1[$_-1], '%', 0, 100) for 1..@values1;
+}
 
-my $value2 = get_aggregated_value("$baseoid.7", "$baseoid.4", $opt{'aggregate'}); # 1min
+my @values2 = get_values("$baseoid.7", "$baseoid.4");
+my $value2 = calculate_aggregate($opt{'aggregate'}, @values2);
 my $status2 = @thresholds >= 2 ? $thresholds[-2]->get_status($value2) : OK;
 push @reports, [ $status2, "1min $value2\%" ];
-add_perfdata('cpu_1min', $value2, '%', 0, 100, @thresholds >= 2 ? $thresholds[-2] : undef);
+add_perfdata('cpu_1min', $value2, '%', 0, 100, @thresholds >= 2 ? $thresholds[-2] : undef) if $perfdata{'aggregate'};
+if ($perfdata{'individual'}) {
+  add_perfdata('cpu'.$_.'_1min', $values2[$_-1], '%', 0, 100) for 1..@values2;
+}
 
-my $value3 = get_aggregated_value("$baseoid.8", "$baseoid.5", $opt{'aggregate'}); # 5min
+my @values3 = get_values("$baseoid.8", "$baseoid.5");
+my $value3 = calculate_aggregate($opt{'aggregate'}, @values3);
 my $status3 = @thresholds >= 1 ? $thresholds[-1]->get_status($value3) : OK;
 push @reports, [ $status3, "5min $value3\%" ];
-add_perfdata('cpu_5min', $value3, '%', 0, 100, @thresholds >= 1 ? $thresholds[-1] : undef);
+add_perfdata('cpu_5min', $value3, '%', 0, 100, @thresholds >= 1 ? $thresholds[-1] : undef) if $perfdata{'aggregate'};
+if ($perfdata{'individual'}) {
+  add_perfdata('cpu'.$_.'_5min', $values2[$_-1], '%', 0, 100) for 1..@values3;
+}
 
 push @reports, [ OK, $processors.' '.noun($processors, 'processor', 'processors') ];
 push @reports, [ OK, format_aggregate($opt{'aggregate'})." aggregation" ] if $processors > 1;
-add_perfdata('processors', $processors, '', 0);
+#add_perfdata('processors', $processors, '', 0);
 
 my $status = max(OK, $status1, $status2, $status3);
 my $report = "CPU utilization ";
@@ -217,10 +242,15 @@ sub add_perfdata {
 #  return $value;
 #}
 
-sub get_aggregated_value {
-  my ($oid_new, $oid_old, $mode) = @_;
+sub get_values {
+  my ($oid_new, $oid_old) = @_;
   my @values = map { $result->{"$oid_new.$_"} } 1..$processors;
   @values = map { $result->{"$oid_old.$_"} } 1..$processors if grep(defined, @values) != $processors;
+  return @values;
+}
+
+sub calculate_aggregate {
+  my ($mode, @values) = @_;
   return int((sum @values)/@values + 0.5) if $mode eq 'avg' || $mode eq 'average';
   return max @values if $mode eq 'max' || $mode eq 'maximum';
   return min @values if $mode eq 'min' || $mode eq 'minimum';
