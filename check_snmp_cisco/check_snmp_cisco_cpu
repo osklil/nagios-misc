@@ -83,6 +83,10 @@ SNMP options:
       --priv-protocol=des|aes      encryption protocol (SNMPv3)
       --snmp-message-size=BYTES    max size of SNMP request packets
 
+By default, multiple processor utilizations are averaged into one
+utilization value, and that value is reported and checked against the
+thresholds. You can change the aggregation function using `--aggregate'.
+
 Threshold specifications are in the format `[[5sec,]1min,]5min', where
 each part of the threshold follows the usual Nagios format:
   Value                  Okay if
