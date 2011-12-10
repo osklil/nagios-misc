@@ -11,6 +11,9 @@ checks are provided:
  * check_snmp_cisco_cpu
    Check CPU utilization using CISCO-PROCESS-MIB.
 
+ * check_snmp_cisco_memory
+   Check memory usage using CISCO-MEMORY-POOL-MIB.
+
 The check_snmp_cisco plugins are written in Perl.
 
 Author and Feedback
@@ -81,6 +84,9 @@ References
 
  * CISCO-PROCESS-MIB: "MIB for CPU and process statistics".
    <ftp://ftp.cisco.com/pub/mibs/v2/CISCO-PROCESS-MIB.my>
+
+ * CISCO-MEMORY-POOL-MIB: "MIB module for monitoring memory pools".
+   <ftp://ftp.cisco.com/pub/mibs/v2/CISCO-MEMORY-POOL-MIB.my>
 
  * Nagios plug-in development guidelines.
    <http://nagiosplug.sourceforge.net/developer-guidelines.html>
