@@ -80,20 +80,17 @@ SNMP options:
       --priv-protocol=des|aes      encryption protocol (SNMPv3)
       --snmp-message-size=BYTES    max size of SNMP request packets
 
-Threshold specifications are in the format `[[5sec,]1min,]5min', where
-each part of the threshold follows the usual Nagios format:
+Multiple thresholds can be specified separated by comma. Use this in
+combination with --filter/-F to specify different thresholds for
+different pools.
+
+Thresholds follows the usual Nagios format:
   Value                  Okay if
   95                     0 <= x <= 95
   95:                    x >= 95
   ~:95                   x <= 95
   50:95                  50 <= x <= 95
   \@50:95                 x < 50 or x > 95
-
-Threshold examples:
-  Specification          Okay if
-  70,80,90               5sec <= 70%, 1min <= 80%, and 5min <= 90%
-  75,95                  1min <= 75%, and 5min <= 95%
-  87                     5min <= 87%
 
 Examples:
   $PROGRAM -H myhost -C mycommunity -w 90 -c 95
@@ -114,10 +111,17 @@ if (defined $opt{'version'}) {
 
 $plugin->nagios_exit(UNKNOWN, "missing --host/-H parameter\n") if !defined $opt{'host'};
 
-my $threshold;
-$plugin->nagios_exit(UNKNOWN, "invalid warning threshold `$opt{'warning'}'\n") if $opt{'warning'} !~ /^(\d+|\d+:|~:\d+|\d+:\d+|@\d+:\d+)?$/;
-$plugin->nagios_exit(UNKNOWN, "invalid critical threshold `$opt{'critical'}'\n") if $opt{'critical'} !~ /^(\d+|\d+:|~:\d+|\d+:\d+|@\d+:\d+)?$/;
-$threshold = Nagios::Plugin::Threshold->set_thresholds(warning => $opt{'warning'}, critical => $opt{'critical'});
+my @thresholds;
+my @warning_thresholds = split(/,/, $opt{'warning'});
+my @critical_thresholds = split(/,/, $opt{'critical'});
+$plugin->nagios_exit(UNKNOWN, "must specify equal number of warning and critical thresholds\n") if @warning_thresholds != @critical_thresholds;
+if (@warning_thresholds != 0) {
+  for (my $c = 0; $c < @warning_thresholds; $c++) {
+    $plugin->nagios_exit(UNKNOWN, "invalid warning threshold `$warning_thresholds[$c]'\n") if $warning_thresholds[$c] !~ /^(\d+|\d+:|~:\d+|\d+:\d+|@\d+:\d+)$/;
+    $plugin->nagios_exit(UNKNOWN, "invalid critical threshold `$critical_thresholds[$c]'\n") if $critical_thresholds[$c] !~ /^(\d+|\d+:|~:\d+|\d+:\d+|@\d+:\d+)$/;
+    push @thresholds, Nagios::Plugin::Threshold->set_thresholds(warning => $warning_thresholds[$c], critical => $critical_thresholds[$c]);
+  }
+}
 $plugin->nagios_exit(UNKNOWN, "surplus operand\n") if @ARGV;
 
 my $retries = 1; # default number of SNMP retries in Net::SNMP
@@ -153,6 +157,7 @@ $plugin->nagios_exit(UNKNOWN, "no memory pool entries available\n") if !@indexes
 
 my $status = OK;
 my @reports;
+my $threshold_index = 0;
 foreach my $index (sort @indexes) {
   my $name = $result->{"$baseoid.2.$index"};
   my $used = get_result("$baseoid.5.$index", qr/^\d+$/, "memory used for $name");
@@ -162,15 +167,24 @@ foreach my $index (sort @indexes) {
     print "$index $name\n";
   } else {
     my $used_percent = int($used*100/($used+$free) + 0.5);
-    my $item_status = $threshold->get_status($used_percent);
+    my $item_status = OK;
+    my ($threshold, $byte_threshold);
+    if (@thresholds > 0) {
+      $threshold_index = 0 if $threshold_index >= @thresholds;
+      $threshold = $thresholds[$threshold_index++];
+      $item_status = $threshold->get_status($used_percent);    
+      #$threshold_index++ if $threshold_index < $#threshold_index;
+    }
     $status = max($status, $item_status);
     push @reports, [ $item_status, "$name $used_percent\%" ] if $opt{'verbose'} == 0;
     push @reports, [ $item_status, "$name\[$index\] $used_percent\%" ] if $opt{'verbose'} >= 1;
     add_perfdata($name.'_used%', $used_percent, '%', 0, 100, $threshold);
-    my $byte_threshold = Nagios::Plugin::Threshold->set_thresholds(
-      warning => convert_percent_range($opt{'warning'}, $used+$free),
-      critical => convert_percent_range($opt{'critical'}, $used+$free));
-    add_perfdata($name.'_used', $used, 'B', 0, $used+$free, $byte_threshold);
+    if (defined $threshold) {
+      $byte_threshold = Nagios::Plugin::Threshold->set_thresholds(
+        warning => convert_percent_range($threshold->{'warning'}, $used+$free),
+        critical => convert_percent_range($threshold->{'critical'}, $used+$free));
+      add_perfdata($name.'_used', $used, 'B', 0, $used+$free, $byte_threshold);
+    }
   }
 }
 
