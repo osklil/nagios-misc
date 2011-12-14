@@ -47,7 +47,7 @@ Getopt::Long::GetOptions(\%opt,
   'auth-protocol=s', 'priv-protocol=s', 'port=i', 'snmp-message-size=i',
   'local-address=s', 'local-port=s', 'filter|F=s', 'no-perfdata|n',
   'verbose|v+', 'warning|w=s', 'critical|c=s',
-  'help', 'version'
+  'list|l', 'help', 'version'
 ) || exit UNKNOWN;
 
 if (defined $opt{'help'}) {
@@ -62,6 +62,7 @@ General options:
   -w, --warning=THRESHOLDS         warning threshold for utilization
   -c, --critical=THRESHOLDS        critical threshold for utilization
   -n, --no-perfdata                do not print any performance data
+  -l, --list                       list memory pools and do not check
       --help                       display this help and exit
       --version                    output version information and exit
 
@@ -152,22 +153,28 @@ $plugin->nagios_exit(UNKNOWN, "no memory pool entries available\n") if !@indexes
 
 my $status = OK;
 my @reports;
-foreach my $index (@indexes) {
+foreach my $index (sort @indexes) {
   my $name = $result->{"$baseoid.2.$index"};
   my $used = get_result("$baseoid.5.$index", qr/^\d+$/, "memory used for $name");
   my $free = get_result("$baseoid.6.$index", qr/^\d+$/, "memory free for $name");
-  
-  my $used_percent = int($used*100/($used+$free) + 0.5);
-  my $item_status = $threshold->get_status($used_percent);
-  $status = max($status, $item_status);
-  push @reports, [ $item_status, "$name $used_percent\%" ] if $opt{'verbose'} == 0;
-  push @reports, [ $item_status, "$name\[$index\] $used_percent\%" ] if $opt{'verbose'} >= 1;
-  add_perfdata($name.'_used%', $used_percent, '%', 0, 100, $threshold);
-  my $byte_threshold = Nagios::Plugin::Threshold->set_thresholds(
-    warning => convert_percent_range($opt{'warning'}, $used+$free),
-    critical => convert_percent_range($opt{'critical'}, $used+$free));
-  add_perfdata($name.'_used', $used, 'B', 0, $used+$free, $byte_threshold);
+
+  if ($opt{'list'}) {
+    print "$index $name\n";
+  } else {
+    my $used_percent = int($used*100/($used+$free) + 0.5);
+    my $item_status = $threshold->get_status($used_percent);
+    $status = max($status, $item_status);
+    push @reports, [ $item_status, "$name $used_percent\%" ] if $opt{'verbose'} == 0;
+    push @reports, [ $item_status, "$name\[$index\] $used_percent\%" ] if $opt{'verbose'} >= 1;
+    add_perfdata($name.'_used%', $used_percent, '%', 0, 100, $threshold);
+    my $byte_threshold = Nagios::Plugin::Threshold->set_thresholds(
+      warning => convert_percent_range($opt{'warning'}, $used+$free),
+      critical => convert_percent_range($opt{'critical'}, $used+$free));
+    add_perfdata($name.'_used', $used, 'B', 0, $used+$free, $byte_threshold);
+  }
 }
+
+exit 0 if $opt{'list'};
 
 my @report_critical = map { $_->[1] } grep { $_->[0] == CRITICAL } @reports;
 my @report_warning = map { $_->[1] } grep { $_->[0] == WARNING } @reports;
