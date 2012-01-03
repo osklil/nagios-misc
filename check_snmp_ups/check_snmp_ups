@@ -271,7 +271,6 @@ for (my $c = 1; $c <= $out_lines; $c++) {
   add_perfdata("out_voltage$c", $out_voltage * 0.1, 'V');
   add_perfdata("out_current$c", $out_current * 0.1, 'A');
   add_perfdata("out_power$c", $out_power, 'W');
-  add_perfdata("out_load$c", $out_load, '%', 0, 100);
   if (@load_thresholds == 0) {
     add_perfdata("out_load$c", $out_load, '%', 0, 100);
   } else {
