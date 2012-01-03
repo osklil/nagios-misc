@@ -29,7 +29,7 @@ use Nagios::Plugin;
 use Nagios::Plugin::Threshold;
 
 my $PROGRAM = 'check_linux_memory';
-my $VERSION = '0.0+git';
+my $VERSION = '0.1';
 
 my $plugin = Nagios::Plugin->new(shortname => $PROGRAM);
 my %opt;
