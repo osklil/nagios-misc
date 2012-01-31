@@ -1,0 +1,16 @@
+number of scratch in relation to max scratch per storage pool, check in % or number
+check other tsm scripts on nagiosexchange
+
+non-normal client schedules (failed, missed, running, ...)
+
+allow number of volumes in %?
+
+volumes needing reclamation should report total number of volumes as well (somehow)
+
+run commands from script, with one query on each line
+
+improve command and output processing like tsmmon. this would fix 'order' issue with requests
+
+|allow grouping of commands, and specified -w and -c, e.g. check_tsm ... -wW1 -cC1 drives -wW2 -cC2 paths
+
+|implement "requests" check: number of active requests (>0=warning, >1=critical)
