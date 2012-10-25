@@ -1,2 +1,6 @@
-2012-01-??: Version 0.1 released.
+2012-10-25: Version 0.2 released.
+Bug fix: Detect and report missing swap properly.
+New option -s/--swap-optional: Missing swap is critical unless this option is given.
+
+2012-01-03: Version 0.1 released.
 First public release.

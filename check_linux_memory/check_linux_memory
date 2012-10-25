@@ -29,12 +29,12 @@ use Nagios::Plugin;
 use Nagios::Plugin::Threshold;
 
 my $PROGRAM = 'check_linux_memory';
-my $VERSION = '0.1';
+my $VERSION = '0.2';
 
 my $plugin = Nagios::Plugin->new(shortname => $PROGRAM);
 my %opt;
 Getopt::Long::config('bundling');
-Getopt::Long::GetOptions(\%opt, 'warning|w=s', 'critical|c=s', 'no-perfdata|n', 'help', 'version') || exit UNKNOWN;
+Getopt::Long::GetOptions(\%opt, 'warning|w=s', 'critical|c=s', 'swap-optional|s', 'no-perfdata|n', 'help', 'version') || exit UNKNOWN;
 
 if (defined $opt{'help'}) {
   print <<"__END__";
@@ -44,6 +44,7 @@ Check used memory locally on Linux systems.
   -w, --warning=MEMORY[,SWAP]   warning threshold for percent used memory
   -c, --critical=MEMORY[,SWAP]  critical threshold for percent used memory
   -n, --no-perfdata             do not print any performance data
+  -s, --swap-optional           swap is not required
       --help                    display this help and exit
       --version                 output version information and exit    
 
@@ -87,11 +88,12 @@ while (<$fh>) {
   $swapavail += $1*1024 if /^SwapFree:\s+(\d+) kB/;
 }
 close $fh;
+$plugin->nagios_exit(UNKNOWN, "missing information in $file") if (grep { !defined } $memtotal, $memavail, $swaptotal, $swapavail) || $memtotal == 0;
 
 my $memused = $memtotal - $memavail;
 my $memusedpct = int($memused/$memtotal * 100 + 0.5);
 my $swapused = $swaptotal - $swapavail;
-my $swapusedpct = int($swapused/$swaptotal * 100 + 0.5);
+my $swapusedpct = $swaptotal == 0 ? 0 : int($swapused/$swaptotal * 100 + 0.5);
 
 if (!$opt{'no-perfdata'}) {
   my $membyte_threshold = Nagios::Plugin::Threshold->set_thresholds(
@@ -113,7 +115,11 @@ push @reports, [
 push @reports, [
   $swappct_threshold->get_status($swapusedpct),
   sprintf('Swap used: %s/%s (%u%%)', human_readable_integer($swapused), human_readable_integer($swaptotal), $swapusedpct)
-];
+] if $swaptotal != 0;
+push @reports, [
+  CRITICAL,
+  "No swap active"
+] if $swaptotal == 0 && !$opt{'swap-optional'};
 
 my $status = max map { $_->[0] } @reports;
 my @report_critical = map { $_->[1] } grep { $_->[0] == CRITICAL } @reports;
