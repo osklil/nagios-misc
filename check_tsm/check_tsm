@@ -41,7 +41,7 @@ Getopt::Long::GetOptions(\%opt, 'host|H=s', 'username|U=s', 'password|P=s',
   'tsm-directory=s', 'warning|w=s', 'critical|c=s', 'bytes', 'help', 'version',
   '<>' => sub {
     push @checks, {
-      'type' => $_[0]->{'name'},
+      'type' => $_[0],
       'warning' => $opt{'warning'}, #$opt{'warning'} eq '-' ? undef : $opt{'warning'},
       'critical' => $opt{'critical'}, #$opt{'critical'} eq '-' ? undef : $opt{'critical'},
     };
